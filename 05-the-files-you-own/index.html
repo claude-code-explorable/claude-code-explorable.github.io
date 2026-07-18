@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The files you own in Claude Code — an explorable</title>
+<style>
+  /* ---------- Tokens: light default, dark + explicit toggle override ---------- */
+  :root {
+    --bg:#eef0f4; --surface:#f9fafb; --surface-2:#e4e7ee; --border:#d4d8e2;
+    --ink:#1a1d25; --ink-dim:#545a68; --ink-faint:#63697a; --accent:#4a5bc4;
+
+    /* the thesis: two kinds of file, two colors */
+    --adv:#4f7fd6;    /* advisory — Claude reads it, and may not comply */
+    --enf:#c0492f;    /* enforced — the harness acts, Claude has no say */
+    --tools:#2f8f6e;  /* adds capability rather than instruction */
+
+    --code-bg:#111319; --code-panel:#191c24; --code-ink:#e3e6ee; --code-dim:#848a99; --code-line:#272b35;
+    --shadow:0 1px 2px rgba(20,24,40,.05), 0 8px 30px rgba(20,24,40,.06);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --r:14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#12141a; --surface:#1a1d25; --surface-2:#232733; --border:#2d323f;
+      --ink:#e6e9f0; --ink-dim:#9ba2b3; --ink-faint:#7d8496; --accent:#8f9bf0;
+      --adv:#7ba3e8; --enf:#e8886b; --tools:#5cc49b;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#12141a; --surface:#1a1d25; --surface-2:#232733; --border:#2d323f;
+    --ink:#e6e9f0; --ink-dim:#9ba2b3; --ink-faint:#7d8496; --accent:#8f9bf0;
+    --adv:#7ba3e8; --enf:#e8886b; --tools:#5cc49b;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+  }
+  :root[data-theme="light"] {
+    --bg:#eef0f4; --surface:#f9fafb; --surface-2:#e4e7ee; --border:#d4d8e2;
+    --ink:#1a1d25; --ink-dim:#545a68; --ink-faint:#63697a; --accent:#4a5bc4;
+    --adv:#4f7fd6; --enf:#c0492f; --tools:#2f8f6e;
+    --shadow:0 1px 2px rgba(20,24,40,.05), 0 8px 30px rgba(20,24,40,.06);
+  }
+
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  .wrap { max-width:1080px; margin:0 auto; padding:clamp(20px,5vw,56px) clamp(16px,4vw,40px) 72px; }
+
+  /* Header */
+  header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+  .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 14px; display:inline-flex; align-items:center; gap:9px; }
+  .eyebrow::before { content:""; width:22px; height:1px; background:var(--accent); opacity:.6; }
+  h1 { font-size:clamp(30px,5.4vw,50px); line-height:1.02; letter-spacing:-0.02em; font-weight:680; margin:0 0 16px; text-wrap:balance; max-width:17ch; }
+  h1 em { font-style:normal; color:var(--accent); }
+  .lede { font-size:clamp(16px,2.1vw,19px); color:var(--ink-dim); max-width:64ch; margin:0; }
+  .lede b { color:var(--ink); font-weight:620; }
+  .theme-btn { flex:0 0 auto; font-family:var(--mono); font-size:12px; letter-spacing:.04em; color:var(--ink-dim); background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:8px 14px; cursor:pointer; white-space:nowrap; transition:color .15s, border-color .15s, background .15s; }
+  .theme-btn:hover { color:var(--ink); border-color:var(--ink-faint); }
+
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); box-shadow:var(--shadow); }
+
+  /* Lens bar */
+  .lensbar { margin-top:38px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 14px; }
+  .lens-label { font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); margin-right:2px; }
+  .lens { font-family:var(--mono); font-size:12px; color:var(--ink-dim); background:var(--surface-2); border:1px solid var(--border); border-radius:999px; padding:6px 13px; cursor:pointer; transition:.15s; }
+  .lens:hover { color:var(--ink); border-color:var(--ink-faint); }
+  .lens[aria-pressed="true"] { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); border-color:color-mix(in srgb, var(--accent) 55%, var(--border)); color:var(--accent); font-weight:600; }
+  .mate { margin-left:auto; display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--ink-dim); cursor:pointer; user-select:none; }
+  .mate input { accent-color:var(--accent); width:15px; height:15px; cursor:pointer; }
+  .lens-note { width:100%; font-size:13px; color:var(--ink-dim); margin:2px 2px 0; }
+  .lens-note b { color:var(--ink); font-weight:620; }
+
+  /* Stage */
+  .stage { margin-top:22px; display:grid; grid-template-columns:minmax(0,420px) 1fr; gap:24px; align-items:start; }
+  @media (max-width:900px) { .stage { grid-template-columns:1fr; } }
+
+  /* Tray */
+  .tray { padding:16px 16px 18px; }
+  .kicker { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); margin:2px 2px 10px; }
+  .grp { margin-bottom:14px; }
+  .grp-hd { font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--gc); border-bottom:1px solid color-mix(in srgb, var(--gc) 30%, var(--border)); padding:0 2px 5px; margin-bottom:7px; display:flex; align-items:center; gap:7px; }
+  .grp-hd .n { margin-left:auto; color:var(--ink-faint); }
+  .part { width:100%; text-align:left; font:inherit; color:inherit; cursor:pointer; display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:9px; border:1px solid transparent; background:transparent; transition:background .15s, border-color .15s, opacity .2s; }
+  .part:hover { background:var(--surface-2); }
+  .part[data-sel="1"] { background:var(--surface-2); border-color:color-mix(in srgb, var(--fc) 50%, var(--border)); }
+  .part .dot { width:9px; height:9px; border-radius:3px; background:var(--fc); flex:0 0 auto; }
+  .part[data-on="0"] { opacity:.5; }
+  .part[data-on="0"] .dot { background:transparent; border:1px dashed var(--ink-faint); }
+  .part[data-on="0"] .pnm { color:var(--ink-faint); }
+  .part.gone { opacity:.3; }
+  .part.gone .pnm { text-decoration:line-through; }
+  .pnm { font-family:var(--mono); font-size:12px; font-weight:560; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .badge { font-family:var(--mono); font-size:8.5px; letter-spacing:.08em; text-transform:uppercase; border-radius:999px; padding:1px 5px; flex:0 0 auto; }
+  .badge.legacy { color:var(--ink-faint); border:1px solid var(--border); }
+  .badge.org { color:var(--enf); border:1px solid color-mix(in srgb, var(--enf) 40%, transparent); }
+  .part .sp { margin-left:auto; }
+
+  /* Tree (folder lens) — one real project, on disk */
+  .tree { font-family:var(--mono); font-size:11.5px; line-height:1.7; }
+  .troot { margin:16px 0 5px; }
+  .troot:first-child { margin-top:2px; }
+  .tr-name { color:var(--ink); font-weight:700; font-size:12px; }
+  .tr-note { display:block; color:var(--ink-faint); font-size:10px; letter-spacing:.02em; margin-top:1px; }
+  .trow { display:flex; align-items:center; width:100%; text-align:left; font:inherit; color:var(--ink-dim); background:transparent; border:1px solid transparent; border-radius:6px; padding:1px 6px 1px 2px; transition:background .15s, border-color .15s, opacity .2s; }
+  .trow .pre { color:var(--ink-faint); white-space:pre; flex:0 0 auto; }
+  .trow .tnm { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  button.trow { cursor:pointer; }
+  button.trow:hover { background:var(--surface-2); }
+  button.trow[data-sel="1"] { background:var(--surface-2); border-color:color-mix(in srgb, var(--fc) 50%, var(--border)); }
+  button.trow .tnm { color:var(--ink); font-weight:560; }
+  .trow .tdot { width:7px; height:7px; border-radius:2px; background:var(--fc); margin-right:7px; flex:0 0 auto; }
+  .trow[data-on="0"] { opacity:.5; }
+  .trow[data-on="0"] .tdot { background:transparent; border:1px dashed var(--ink-faint); }
+  .trow[data-on="0"] .tnm { color:var(--ink-faint); font-weight:400; }
+  .trow.scenery { color:var(--ink-faint); }
+  .trow.gone { opacity:.3; }
+  .trow.gone .tnm { text-decoration:line-through; }
+  .trow .sp { margin-left:8px; }
+
+  /* Detail */
+  .detail { padding:20px 22px; min-height:420px; }
+  .d-top { display:flex; align-items:center; gap:9px; margin-bottom:10px; flex-wrap:wrap; }
+  .d-force { font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--fc); border:1px solid color-mix(in srgb, var(--fc) 40%, transparent); background:color-mix(in srgb, var(--fc) 12%, transparent); border-radius:999px; padding:3px 9px; }
+  .d-path { font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin-left:auto; }
+  .detail h2 { font-family:var(--mono); font-size:19px; line-height:1.2; margin:0 0 10px; font-weight:640; word-break:break-all; }
+  .d-lede { color:var(--ink-dim); font-size:14.5px; margin:0 0 14px; }
+  .d-lede b { color:var(--ink); font-weight:620; }
+  .facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px; margin-bottom:14px; }
+  .fact { background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:8px 10px; }
+  .fact .fl { font-family:var(--mono); font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint); }
+  .fact .fv { font-size:13px; font-weight:600; color:var(--ink); margin-top:2px; }
+  .subhead { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); margin:16px 0 7px; }
+  pre.code { margin:0; background:var(--code-bg); color:var(--code-ink); border-radius:10px; padding:12px 14px; font-family:var(--mono); font-size:11.5px; line-height:1.6; overflow-x:auto; white-space:pre; }
+  .gotcha { margin:14px 0 0; padding:12px 14px; border-radius:10px; border:1px dashed color-mix(in srgb, var(--enf) 50%, var(--border)); background:color-mix(in srgb, var(--enf) 7%, transparent); font-size:13.5px; color:var(--ink-dim); }
+  .gotcha b { color:var(--enf); }
+  .d-ref { margin-top:14px; border-top:1px solid var(--border); padding-top:11px; font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); }
+  .d-ref b { color:var(--ink-dim); }
+
+  /* Two columns */
+  .cols { margin-top:24px; display:grid; grid-template-columns:1fr 1fr; gap:0; overflow:hidden; }
+  @media (max-width:760px) { .cols { grid-template-columns:1fr; } }
+  .col { padding:18px 20px 20px; }
+  .col + .col { border-left:1px solid var(--border); }
+  @media (max-width:760px) { .col + .col { border-left:none; border-top:1px solid var(--border); } }
+  .col-hd { display:flex; align-items:baseline; gap:9px; margin-bottom:4px; }
+  .col-hd h3 { font-size:15px; font-weight:640; margin:0; color:var(--ch); }
+  .col-hd .cnt { font-family:var(--mono); font-size:12px; color:var(--ink-faint); margin-left:auto; font-variant-numeric:tabular-nums; }
+  .col-sub { font-size:12.5px; color:var(--ink-faint); margin:0 0 14px; }
+  .row { display:flex; align-items:center; gap:9px; padding:6px 0; }
+  .row .rnm { font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .rw { margin-left:auto; display:flex; gap:2px; flex:0 0 auto; }
+  .row .rw i { width:5px; height:12px; border-radius:1px; background:color-mix(in srgb, var(--ch) 30%, var(--border)); }
+  .row .rw i.f { background:var(--ch); }
+  .row .rwhen { font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-faint); border:1px solid var(--border); border-radius:999px; padding:1px 5px; flex:0 0 auto; }
+  .empty { font-family:var(--mono); font-size:12px; color:var(--ink-faint); padding:10px 0; font-style:italic; }
+
+  /* Probe */
+  .probe { margin-top:24px; padding:18px 20px 20px; }
+  .probe-hd { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .probe-hd h3 { font-size:15px; font-weight:640; margin:0; }
+  .acts { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .act { font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:7px 11px; cursor:pointer; transition:.15s; }
+  .act:hover { color:var(--ink); border-color:var(--ink-faint); }
+  .act[aria-pressed="true"] { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); border-color:color-mix(in srgb, var(--accent) 55%, var(--border)); color:var(--accent); }
+  .intent { display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:13px; color:var(--ink-dim); background:var(--surface-2); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:14px; }
+  .intent .iq { font-family:var(--mono); color:var(--ink); }
+  .intent .seg-btns { display:flex; gap:6px; margin-left:auto; }
+  .seg-btn { font-family:var(--mono); font-size:11px; color:var(--ink-dim); background:var(--surface); border:1px solid var(--border); border-radius:7px; padding:5px 9px; cursor:pointer; }
+  .seg-btn[aria-pressed="true"] { color:var(--sbc); border-color:color-mix(in srgb, var(--sbc) 55%, var(--border)); background:color-mix(in srgb, var(--sbc) 12%, var(--surface)); font-weight:600; }
+  .sendrow { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+  .send { font-family:var(--mono); font-size:12.5px; font-weight:600; color:#fff; background:var(--accent); border:1px solid var(--accent); border-radius:9px; padding:9px 16px; cursor:pointer; transition:filter .15s, transform .05s; }
+  .send:hover { filter:brightness(1.1); }
+  .send:active { transform:translateY(1px); }
+  .predict { font-size:13px; color:var(--ink-dim); font-style:italic; }
+  .trace { list-style:none; margin:0; padding:0; }
+  .trace.stale { opacity:.32; filter:grayscale(1); }
+  .tstep { display:flex; gap:11px; padding:9px 0; border-top:1px solid var(--border); }
+  .tstep:first-child { border-top:none; }
+  .tstep .ti { width:8px; height:8px; border-radius:999px; background:var(--sc); flex:0 0 auto; margin-top:6px; }
+  .tstep .tb { min-width:0; }
+  .tstep .tt { font-family:var(--mono); font-size:11.5px; color:var(--sc); margin-bottom:2px; }
+  .tstep .td { font-size:13.5px; color:var(--ink-dim); }
+  .tstep .td b { color:var(--ink); font-weight:620; }
+  .verdict { margin-top:14px; padding:12px 14px; border-radius:10px; font-size:14px; border:1px solid color-mix(in srgb, var(--vc) 45%, var(--border)); background:color-mix(in srgb, var(--vc) 9%, transparent); color:var(--ink-dim); }
+  .verdict b { color:var(--vc); }
+
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+
+  .howto { margin-top:34px; font-size:14px; color:var(--ink-dim); max-width:68ch; }
+  .howto b { color:var(--ink); font-weight:620; }
+  footer { margin-top:40px; padding-top:20px; border-top:1px solid var(--border); font-size:13px; color:var(--ink-faint); line-height:1.6; }
+  footer a { color:var(--accent); text-decoration:none; }
+  footer a:hover { text-decoration:underline; }
+  .mono-inline { font-family:var(--mono); font-size:.86em; background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:1px 5px; color:var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) { * { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Explorable · docs-grounded</p>
+      <h1>The files <em>you own</em> in Claude&nbsp;Code</h1>
+      <p class="lede">Everything under <span class="mono-inline">.claude/</span> is a markdown file with YAML frontmatter. A skill, a subagent, a rule and a command are <b>almost indistinguishable by looking at them</b>. What separates them is behaviour — when they load, who triggers them, who else ever sees them, and whether Claude is free to ignore them. <b>Most of what you write is advice the model can misread, deprioritise, or lose. A little of it is a gate the model never sees at all.</b> Build a project and find out which is which.</p>
+    </div>
+    <button class="theme-btn" id="themeBtn" aria-label="Toggle color theme">◐ theme</button>
+  </header>
+
+  <section class="panel lensbar">
+    <span class="lens-label">group by</span>
+    <div id="lenses" style="display:contents"></div>
+    <label class="mate"><input type="checkbox" id="mateBox" /> what a teammate gets</label>
+    <p class="lens-note" id="lensNote"></p>
+  </section>
+
+  <div class="stage">
+    <section class="panel tray">
+      <div class="kicker">click to inspect · click again to author or remove</div>
+      <div id="tray"></div>
+    </section>
+    <section class="panel detail" id="detail" style="--fc:var(--adv)"></section>
+  </div>
+
+  <section class="panel probe">
+    <div class="probe-hd"><h3>Send a request through your project</h3></div>
+    <div class="intent">
+      <span>You want one rule to hold: <span class="iq">“never push to main”</span>. Write it in —</span>
+      <span class="seg-btns" id="intentBtns"></span>
+    </div>
+    <div class="acts" id="acts"></div>
+    <div class="sendrow">
+      <button class="send" id="sendBtn">▶ send the request</button>
+      <span class="predict" id="predict">Decide what you think happens. Then send it.</span>
+    </div>
+    <ul class="trace" id="trace"></ul>
+    <div class="verdict" id="verdict" style="--vc:var(--adv)"></div>
+  </section>
+
+  <section class="panel cols">
+    <div class="col" id="colCtx" style="--ch:var(--adv)">
+      <div class="col-hd"><h3>What Claude reads</h3><span class="cnt" id="ctxCnt"></span></div>
+      <p class="col-sub">Text in the prompt. Claude reads it, weighs it, and may still do something else. Bars are <b>illustrative</b> relative weight, not measured tokens. Tool schemas from <span class="mono-inline">.mcp.json</span> land here too — a tool's description is context like any other.</p>
+      <div id="ctxRows"></div>
+    </div>
+    <div class="col" id="colGate" style="--ch:var(--enf)">
+      <div class="col-hd"><h3>What the harness checks</h3><span class="cnt" id="gateCnt"></span></div>
+      <p class="col-sub">Never enters the prompt. Claude cannot read, argue with, or opt out of any of it.</p>
+      <div id="gateRows"></div>
+    </div>
+  </section>
+
+  <p class="howto">
+    <b>How to read this.</b> Start with the probe: you want <span class="mono-inline">git push origin main</span> stopped, and the rule is filed in <span class="mono-inline">CLAUDE.md</span>. <b>Decide what you think happens, then press send.</b> File the same sentence in <span class="mono-inline">settings.json deny</span> or a <span class="mono-inline">PreToolUse</span> hook and send it again — one sentence, three files, two outcomes. The tray above is every file you can author: solid ones are in your project, faded ones are available; click to inspect, click again to author or remove. The columns below are the consequence, and they are <b>two different machines</b> — adding <span class="mono-inline">CLAUDE.md</span> moves the left and never the right, adding <span class="mono-inline">settings.json</span> moves the right and never the left. Change <b>group by</b> to re-sort the same files by when they load, who else sees them, or whether Claude may ignore them. Tick <b>what a teammate gets</b> to watch everything on your laptop vanish.
+  </p>
+
+  <footer>
+    Grounded in the Claude Code documentation — <a href="https://code.claude.com/docs/en/memory">memory &amp; CLAUDE.md</a>, <a href="https://code.claude.com/docs/en/memory#path-specific-rules">path-specific rules</a>, <a href="https://code.claude.com/docs/en/skills">skills</a>, <a href="https://code.claude.com/docs/en/slash-commands">slash commands</a>, <a href="https://code.claude.com/docs/en/sub-agents">subagents</a>, <a href="https://code.claude.com/docs/en/settings">settings</a>, <a href="https://code.claude.com/docs/en/hooks">hooks</a> and <a href="https://code.claude.com/docs/en/mcp">MCP</a>. Every frontmatter key shown is a real one; nothing here is invented. <b>Context weight is illustrative, not measured</b> — the bars encode rough relative cost to make “always on” feel expensive, and should not be read as token counts. Claude Code moves quickly: verify against the docs before betting on a detail. Self-contained — no fonts, scripts, or assets from the network. See also explorable <a href="../04-under-the-hood-of-claude-code/">04 · under the hood of Claude Code</a>, which covers the runtime this surface talks to.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------------
+  // PARTS — every artifact a user can author, verified against the Claude Code
+  // docs. `fm` lists REAL frontmatter keys only. `weight` is an illustrative
+  // 0-5 relative context cost, NOT a token count (see footer).
+  //   lane:  ctx (enters the prompt) | gate (harness acts) | tools (capability)
+  //   when:  start | file-match | invoke | delegate | event
+  //   reach: laptop | team | org
+  //   force: advisory | enforced
+  // ---------------------------------------------------------------------------
+  var PARTS = [
+    { id:"md-proj", name:"CLAUDE.md", path:"./CLAUDE.md", lane:"ctx", when:"start", reach:"team", force:"advisory", weight:5, fm:[],
+      lede:"Project conventions, loaded in full at launch and <b>never unloaded</b>. The workhorse — and the most expensive thing you can write.",
+      code:"# CLAUDE.md\n\n@docs/standards/api.md\n@docs/standards/testing.md\n\nBuild with `npm run build`.\nAPI handlers live in src/api/handlers/.",
+      gotcha:"The import syntax is <code>@docs/api.md</code> — and only that. A markdown link contains no <code>@</code>, so <code>[api](docs/api.md)</code> renders beautifully and imports <b>nothing</b>. Backticks disable it too: <code>`@README`</code> stays literal text. Paths resolve against the importing file, not your working directory, and recursion stops at four hops.",
+      ref:1, refT:"Claude Code docs · Memory" },
+
+    { id:"md-local", name:"CLAUDE.local.md", path:"./CLAUDE.local.md", lane:"ctx", when:"start", reach:"laptop", force:"advisory", weight:3, fm:[],
+      lede:"Same thing, but yours alone. Gitignored. Appends after the project file at the same level.",
+      code:"# CLAUDE.local.md\n\nMy sandbox runs on :4000, not :3000.\nSkip the docker step — I run postgres natively.",
+      gotcha:"Anything a teammate needs must <b>not</b> live here. This is the file where team conventions go to die quietly.",
+      ref:1, refT:"Claude Code docs · Memory" },
+
+    { id:"md-user", name:"~/.claude/CLAUDE.md", path:"~/.claude/CLAUDE.md", lane:"ctx", when:"start", reach:"laptop", force:"advisory", weight:3, fm:[],
+      lede:"Your personal preferences, injected into <b>every project you ever open</b>. Never shared, never reviewed.",
+      code:"# ~/.claude/CLAUDE.md\n\nAlways explain the why before the diff.\nPrefer small commits.",
+      gotcha:"Loads everywhere, so a preference written here silently follows you into repos where it is wrong.",
+      ref:1, refT:"Claude Code docs · Memory" },
+
+    { id:"md-managed", name:"managed CLAUDE.md", path:"/etc/claude-code/CLAUDE.md", lane:"ctx", when:"start", reach:"org", force:"advisory", weight:2, fm:[],
+      lede:"Deployed by IT. Highest priority of the CLAUDE.md levels, and you cannot remove it from your session.",
+      code:"# managed\n\nNever paste customer data into a prompt.\nAll deploys go through change control.",
+      gotcha:"Advisory <b>despite</b> being org-mandated. Priority is not the same as enforcement — if it must hold, it belongs in managed settings, not here.",
+      ref:1, refT:"Claude Code docs · Memory" },
+
+    { id:"rules-proj", name:".claude/rules/api.md", path:".claude/rules/api.md", lane:"ctx", when:"file-match", reach:"team", force:"advisory", weight:2, fm:["paths"],
+      lede:"Conventions that load <b>only when Claude reads a matching file</b>. The cheap way to have a lot of rules without paying for them every turn.",
+      code:"---\npaths:\n  - \"src/api/**/*.ts\"\n---\n\nThrow ApiError. Never hand-return a status shape.",
+      gotcha:"The trigger is Claude <b>reading</b> a matching file — not the file open in your editor. And a file can match several rules at once: a test beside a React component picks up both.",
+      ref:2, refT:"Claude Code docs · Memory § path-specific rules" },
+
+    { id:"rules-test", name:".claude/rules/tests.md", path:".claude/rules/tests.md", lane:"ctx", when:"file-match", reach:"team", force:"advisory", weight:2, fm:["paths"],
+      lede:"The same mechanism with a tree-wide glob. Rules with no <code>paths</code> key load unconditionally at launch.",
+      code:"---\npaths:\n  - \"**/*.test.{ts,tsx}\"\n---\n\nOne behaviour per test. No snapshot tests for logic.",
+      gotcha:"Drop the <code>paths</code> key and this becomes a second always-on CLAUDE.md that you will forget you wrote.",
+      ref:2, refT:"Claude Code docs · Memory § path-specific rules" },
+
+    { id:"rules-user", name:"~/.claude/rules/*.md", path:"~/.claude/rules/style.md", lane:"ctx", when:"file-match", reach:"laptop", force:"advisory", weight:1, fm:["paths"],
+      lede:"Path-scoped rules that apply across all your projects. Project rules load after these and take priority.",
+      code:"---\npaths:\n  - \"**/*.py\"\n---\n\nType-hint everything. I mean it.",
+      gotcha:"Invisible to everyone else, so a rule here explains why Claude behaves differently on your machine than in CI.",
+      ref:2, refT:"Claude Code docs · Memory § path-specific rules" },
+
+    { id:"skill-proj", name:".claude/skills/deploy-check/", path:".claude/skills/deploy-check/SKILL.md", lane:"ctx", when:"invoke", reach:"team", force:"advisory", weight:1, fm:["name","description","allowed-tools","context","agent","model","argument-hint","paths"],
+      lede:"A procedure, loaded <b>only when invoked</b> — by you as <code>/deploy-check</code>, or by Claude when the description matches. A directory, so it can carry templates and scripts.",
+      code:"---\ndescription: Pre-deploy checks. Run before shipping.\nallowed-tools: Read, Grep, Bash(git status:*)\ncontext: fork\n---\n\nCheck: tree clean, migrations in step, CI green.\nReturn a verdict block only.",
+      gotcha:"<code>context: fork</code> runs it in a subagent — the noisy output stays there and only the verdict comes back. That is the whole reason your CLAUDE.md does not become 600 lines.",
+      ref:3, refT:"Claude Code docs · Skills" },
+
+    { id:"skill-user", name:"~/.claude/skills/*/", path:"~/.claude/skills/weather/SKILL.md", lane:"ctx", when:"invoke", reach:"laptop", force:"advisory", weight:1, fm:["name","description","allowed-tools","context","model"],
+      lede:"Your own skills, available in every project. Personal beats project on a name collision.",
+      code:"---\ndescription: Check the weather for any location.\n---\n\nFetch and summarise the forecast.",
+      gotcha:"A stricter personal variant is the sanctioned way to tighten a team skill without touching anyone else's setup.",
+      ref:3, refT:"Claude Code docs · Skills" },
+
+    { id:"cmd", name:".claude/commands/review.md", path:".claude/commands/review.md", lane:"ctx", when:"invoke", reach:"team", force:"advisory", weight:1, legacy:true, fm:["allowed-tools","description","argument-hint"],
+      lede:"A slash command — the <b>older spelling of a skill</b>. Still works; still invoked as <code>/review</code>. One file rather than a directory.",
+      code:"---\nallowed-tools: Read, Grep, Bash(git diff:*), Bash(git log:*)\ndescription: Review a PR the way this team reviews\n---\n\nAsk the author's intent first. Then report.",
+      gotcha:"<b>Legacy.</b> Commands have been merged into skills — if a skill and a command share a name, <b>the skill wins</b>. New work goes in <code>.claude/skills/</code>.",
+      ref:3, refT:"Claude Code docs · Skills" },
+
+    { id:"agent-proj", name:".claude/agents/reviewer.md", path:".claude/agents/reviewer.md", lane:"ctx", when:"delegate", reach:"team", force:"advisory", weight:1, fm:["name","description","tools","model","permissionMode","maxTurns","skills","isolation","effort"],
+      lede:"A subagent: its own context window, its own tool allowlist, its own model. Claude delegates to it when the <code>description</code> matches, and only a summary comes back.",
+      code:"---\nname: explorable-critic\ndescription: Critique an explorable. Reviews only.\ntools: Read, Grep, Glob, WebFetch\nmodel: opus\n---\n\nYou are a senior explainer designer…",
+      gotcha:"The <code>description</code> is not documentation — it is the <b>dispatch rule</b>. Vague description, never delegated to.",
+      ref:4, refT:"Claude Code docs · Subagents" },
+
+    { id:"agent-user", name:"~/.claude/agents/*.md", path:"~/.claude/agents/code-reviewer.md", lane:"ctx", when:"delegate", reach:"laptop", force:"advisory", weight:1, fm:["name","description","tools","model"],
+      lede:"Personal subagents, available everywhere. Project agents of the same name take priority.",
+      code:"---\nname: code-reviewer\ndescription: Review changes for bugs before commit.\ntools: Read, Grep, Glob, Bash\n---\n\nYou review code…",
+      gotcha:"Nobody else has it. A workflow that depends on your personal agent breaks the moment someone else runs it.",
+      ref:4, refT:"Claude Code docs · Subagents" },
+
+    { id:"memory", name:"auto-memory MEMORY.md", path:"~/.claude/projects/<id>/memory/", lane:"ctx", when:"start", reach:"laptop", force:"advisory", weight:2, fm:[],
+      lede:"Written by Claude, not by you. Per-repo, machine-local. The index loads at session start; topic files are read on demand.",
+      code:"# Memory Index\n\n- [Build Lessons](feedback_build_lessons.md) — recurring mistakes\n- [User Role](user_role_pm.md) — AI PM, product roadmaps",
+      gotcha:"It records what was true when written. A memory naming a file or flag can go stale silently — and it never leaves your machine.",
+      ref:5, refT:"Claude Code docs · Memory" },
+
+    { id:"mcp", name:".mcp.json", path:"./.mcp.json", lane:"tools", when:"start", reach:"team", force:"neither", weight:2, fm:["mcpServers"],
+      lede:"Adds <b>new tools</b> rather than new instructions. Version-controlled, so the team gets the same servers.",
+      code:"{\n  \"mcpServers\": {\n    \"playwright\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@playwright/mcp@latest\"]\n    }\n  }\n}",
+      gotcha:"Every server you connect widens the action space <b>and</b> the prompt — tool schemas are context too. Project-scoped servers prompt for approval on first use.",
+      ref:6, refT:"Claude Code docs · MCP" },
+
+    { id:"set-proj", name:".claude/settings.json", path:".claude/settings.json", lane:"gate", when:"start", reach:"team", force:"enforced", weight:0, fm:["permissions","hooks","env","model","defaultMode"],
+      lede:"The team's rules, and the first file on this list that <b>Claude never reads</b>. Permission rules are matched by the harness before a tool ever runs.",
+      code:"{\n  \"permissions\": {\n    \"deny\": [\"Bash(git push:*)\", \"Read(./.env)\"],\n    \"allow\": [\"Bash(npm run test:*)\"]\n  }\n}",
+      gotcha:"Permissions <b>merge</b> across scopes instead of overriding — a deny written anywhere still denies. That is deliberate: you cannot loosen a team rule by writing a local allow.",
+      ref:7, refT:"Claude Code docs · Settings" },
+
+    { id:"set-local", name:".claude/settings.local.json", path:".claude/settings.local.json", lane:"gate", when:"start", reach:"laptop", force:"enforced", weight:0, fm:["permissions","hooks","env"],
+      lede:"Your personal gates for this project. Gitignored. Beats project settings — but only in your favour where the merge allows it.",
+      code:"{\n  \"permissions\": {\n    \"allow\": [\"WebSearch\", \"Bash(git --version)\"]\n  }\n}",
+      gotcha:"This is where the yes-I-approve-this-command list accretes. Harmless — until you assume a teammate has the same allowances.",
+      ref:7, refT:"Claude Code docs · Settings" },
+
+    { id:"set-user", name:"~/.claude/settings.json", path:"~/.claude/settings.json", lane:"gate", when:"start", reach:"laptop", force:"enforced", weight:0, fm:["permissions","hooks","env","model","theme"],
+      lede:"Your defaults across every project — model, theme, and the permissions you are tired of re-approving.",
+      code:"{\n  \"permissions\": {\n    \"allow\": [\"Bash(npm install *)\"]\n  },\n  \"theme\": \"dark\"\n}",
+      gotcha:"Lowest precedence of the settings files, so a project or local setting quietly wins over anything you put here.",
+      ref:7, refT:"Claude Code docs · Settings" },
+
+    { id:"set-managed", name:"managed-settings.json", path:"/etc/claude-code/managed-settings.json", lane:"gate", when:"start", reach:"org", force:"enforced", weight:0, fm:["permissions","claudeMd","availableModels","forceLoginMethod"],
+      lede:"Deployed by IT. <b>Highest precedence of everything on this page</b>, and the one file with no user escape hatch.",
+      code:"{\n  \"permissions\": {\n    \"deny\": [\"Bash(curl:*)\", \"Read(./secrets/**)\"]\n  },\n  \"availableModels\": [\"opus\", \"sonnet\"]\n}",
+      gotcha:"Cannot be overridden by any file you write. If your org needs a rule to actually hold, this is the only place it can live.",
+      ref:7, refT:"Claude Code docs · Settings" },
+
+    { id:"hooks", name:"hooks (in settings.json)", path:".claude/settings.json → hooks", lane:"gate", when:"event", reach:"team", force:"enforced", weight:0, fm:["PreToolUse","PostToolUse","SessionStart","UserPromptSubmit","Stop"],
+      lede:"Shell commands the harness runs on lifecycle events. Deterministic: they fire whether Claude likes it or not. On <code>PreToolUse</code>, an exit code of <b>2 blocks the call</b> and feeds stderr back to Claude — though exit-2 behaviour differs by event.",
+      code:"{\n  \"hooks\": {\n    \"PreToolUse\": [{\n      \"matcher\": \"Bash\",\n      \"hooks\": [{\n        \"type\": \"command\",\n        \"if\": \"Bash(git push:*)\",\n        \"command\": \"./ci/guard.sh\"\n      }]\n    }]\n  }\n}",
+      gotcha:"<code>matcher</code> narrows to the tool; <code>if</code> narrows to the arguments — and <code>if</code> sits on the <b>handler</b>, not the matcher group. Put it one level up and it is silently ignored. This is the only way to make something happen <b>every single time</b>: asking in CLAUDE.md is a request, a hook is a guarantee.",
+      ref:8, refT:"Claude Code docs · Hooks" }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // LENSES — the same 19 files, re-sorted by the question you are asking.
+  // The folder lens is the one everybody starts with, and the one that hides
+  // every property that matters.
+  // ---------------------------------------------------------------------------
+  var LENSES = [
+    { id:"folder", name:"the real tree",
+      note:"A team's e-commerce monorepo, on disk, the way you would actually meet it. <b>Three roots — and only the first is in the repo.</b> This is the view you get from <code>ls</code>, and the only one most people ever see: files that behave nothing alike sit side by side, and files that behave identically sit in different roots. <b>Every property that matters is invisible here.</b> Switch to <b>advice or law</b> to see what <code>ls</code> cannot tell you." },
+    { id:"force", name:"advice or law",
+      note:"The deepest cut on this page. <b>Advisory</b> files are text in the prompt — Claude reads them and usually complies. <b>Enforced</b> files are matched by the harness before a tool runs; Claude never sees them and cannot argue." },
+    { id:"when", name:"when it loads",
+      note:"<b>Always-on</b> costs you every single turn, forever. <b>On-match</b> and <b>on-invoke</b> cost nothing until they are needed. This is the whole reason skills and rules exist." },
+    { id:"reach", name:"who else sees it",
+      note:"<b>Laptop</b> files are invisible to everyone else — the most common mistake in this list is putting a team convention in one. <b>Team</b> files are committed. <b>Org</b> files are deployed by IT and cannot be removed." }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // TREE — one real project, on disk, the way you would actually meet it. The
+  // three roots are the point: only the first one is in the repo. Rows with an
+  // `id` are authorable parts; the rest is scenery, so .claude/ is seen sitting
+  // inside real code rather than floating on its own.
+  // ---------------------------------------------------------------------------
+  var TREE = [
+    { head:"acme-shop/", note:"the repo · committed · every teammate who clones gets exactly this" },
+    { pre:"├── ", n:"CLAUDE.md",                    id:"md-proj" },
+    { pre:"├── ", n:"CLAUDE.local.md",              id:"md-local" },
+    { pre:"├── ", n:".mcp.json",                    id:"mcp" },
+    { pre:"├── ", n:".gitignore" },
+    { pre:"├── ", n:"package.json" },
+    { pre:"├── ", n:".claude/" },
+    { pre:"│   ├── ", n:"settings.json",            id:"set-proj" },
+    { pre:"│   │     ", n:"└ hooks: { … }",         id:"hooks" },
+    { pre:"│   ├── ", n:"settings.local.json",      id:"set-local" },
+    { pre:"│   ├── ", n:"rules/" },
+    { pre:"│   │   ├── ", n:"api.md",               id:"rules-proj" },
+    { pre:"│   │   └── ", n:"tests.md",             id:"rules-test" },
+    { pre:"│   ├── ", n:"skills/" },
+    { pre:"│   │   └── ", n:"deploy-check/SKILL.md", id:"skill-proj" },
+    { pre:"│   ├── ", n:"commands/" },
+    { pre:"│   │   └── ", n:"review.md",            id:"cmd" },
+    { pre:"│   └── ", n:"agents/" },
+    { pre:"│       └── ", n:"reviewer.md",          id:"agent-proj" },
+    { pre:"└── ", n:"src/" },
+    { pre:"    ├── ", n:"api/handlers/orders.ts" },
+    { pre:"    └── ", n:"web/components/CartRow.tsx" },
+
+    { head:"~/.claude/", note:"your laptop · in no repo · not one teammate has any of this" },
+    { pre:"├── ", n:"CLAUDE.md",                    id:"md-user" },
+    { pre:"├── ", n:"settings.json",                id:"set-user" },
+    { pre:"├── ", n:"rules/style.md",               id:"rules-user" },
+    { pre:"├── ", n:"skills/weather/SKILL.md",      id:"skill-user" },
+    { pre:"├── ", n:"agents/code-reviewer.md",      id:"agent-user" },
+    { pre:"└── ", n:"projects/<id>/memory/MEMORY.md", id:"memory" },
+
+    { head:"/etc/claude-code/", note:"deployed by IT · highest precedence · you cannot remove or override it" },
+    { pre:"├── ", n:"CLAUDE.md",                    id:"md-managed" },
+    { pre:"└── ", n:"managed-settings.json",        id:"set-managed" }
+  ];
+
+  var GROUPS = {
+    force: [
+      { k:"advisory", label:"advisory · Claude may ignore it", c:"--adv" },
+      { k:"enforced", label:"enforced · Claude has no say",    c:"--enf" },
+      { k:"neither",  label:"neither · it changes what Claude can do, not what it is told", c:"--tools" }
+    ],
+    when: [
+      { k:"start",      label:"every session, always on", c:"--adv" },
+      { k:"file-match", label:"when Claude reads a match", c:"--adv" },
+      { k:"invoke",     label:"only when invoked",         c:"--tools" },
+      { k:"delegate",   label:"only when delegated to",    c:"--tools" },
+      { k:"event",      label:"on a lifecycle event",      c:"--enf" }
+    ],
+    reach: [
+      { k:"laptop", label:"your laptop only",   c:"--ink-faint" },
+      { k:"team",   label:"committed to git",   c:"--adv" },
+      { k:"org",    label:"deployed by IT",     c:"--enf" }
+    ]
+  };
+
+  function keyFor(p, lens) {
+    if (lens === "force") return p.force;
+    if (lens === "when") return p.when;
+    return p.reach;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ACTIONS — a request arriving at your project. Each resolves against
+  // whatever you have authored, in the order the harness actually works:
+  // context is assembled, then the permission gate runs, then the tool runs.
+  // ---------------------------------------------------------------------------
+  var ACTIONS = [
+    { id:"push", label:"git push origin main", tool:"Bash", deny:"Bash(git push:*)", carries:true },
+    { id:"api",  label:"edit src/api/handler.ts", tool:"Edit", match:["rules-proj"] },
+    { id:"env",  label:"read .env", tool:"Read", deny:"Read(./.env)" },
+    { id:"skill",label:"/deploy-check", tool:"Skill", invokes:"skill-proj" }
+  ];
+
+  // ---- STATE ----
+  var on = {};                    // id -> authored?
+  var lens = "folder";
+  var selPart = "md-proj";
+  var mate = false;
+  var act = "push";
+  var intentIn = "md-proj";       // where "never push to main" is filed
+  var sent = false;               // the reader must commit before being refuted
+  var lastFocus = null;           // every render replaces nodes; put focus back
+  var $ = function (id) { return document.getElementById(id); };
+
+  // The settings.json and hook samples reflect where you filed the rule, so the
+  // file on screen never contradicts the trace beside it.
+  function codeFor(p) {
+    if (p.id === "set-proj") {
+      var deny = intentIn === "set-proj" ? '"Bash(git push:*)", "Read(./.env)"' : '"Read(./.env)"';
+      return '{\n  "permissions": {\n    "deny": [' + deny + '],\n    "allow": ["Bash(npm run test:*)"]\n  }\n}';
+    }
+    if (p.id === "hooks" && intentIn !== "hooks") {
+      return '{\n  "hooks": {\n    "PreToolUse": [{\n      "matcher": "Bash",\n      "hooks": [{\n        "type": "command",\n        "if": "Bash(rm *)",\n        "command": "./.claude/hooks/block-rm.sh"\n      }]\n    }]\n  }\n}';
+    }
+    return p.code;
+  }
+
+  // A realistic small project: both columns populated from the first frame, so
+  // the two-machines split is visible before anything is clicked. hooks is
+  // authored so all three answers to "where do I file this rule?" are live.
+  ["md-proj", "rules-proj", "skill-proj", "agent-proj", "set-proj", "md-user", "set-local", "hooks"].forEach(function (k) { on[k] = true; });
+
+  function byId(id) { for (var i = 0; i < PARTS.length; i++) if (PARTS[i].id === id) return PARTS[i]; return null; }
+  function hidden(p) { return mate && p.reach === "laptop"; }
+  function live(p) { return on[p.id] && !hidden(p); }
+  function fcOf(p) { return p.force === "enforced" ? "--enf" : (p.force === "neither" ? "--tools" : "--adv"); }
+  function forceLabel(p) { return p.force === "enforced" ? "enforced" : (p.force === "neither" ? "capability" : "advisory"); }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  // ---- RENDER: lens bar ----
+  function renderLenses() {
+    var h = "";
+    for (var i = 0; i < LENSES.length; i++) {
+      h += '<button class="lens" data-l="' + LENSES[i].id + '" aria-pressed="' + (lens === LENSES[i].id) + '">' + LENSES[i].name + "</button>";
+    }
+    $("lenses").innerHTML = h;
+    var rows = $("lenses").querySelectorAll(".lens");
+    for (var k = 0; k < rows.length; k++) {
+      rows[k].addEventListener("click", function () { lens = this.getAttribute("data-l"); render(); });
+    }
+    for (var j = 0; j < LENSES.length; j++) if (LENSES[j].id === lens) $("lensNote").innerHTML = LENSES[j].note;
+  }
+
+  // ---- RENDER: the real tree (folder lens) ----
+  function renderTree() {
+    var h = '<div class="tree">', i;
+    for (i = 0; i < TREE.length; i++) {
+      var r = TREE[i];
+      if (r.head) {
+        h += '<div class="troot"><span class="tr-name">' + esc(r.head) + '</span>' +
+             '<span class="tr-note">' + esc(r.note) + "</span></div>";
+        continue;
+      }
+      var p = r.id ? byId(r.id) : null;
+      if (!p) {
+        h += '<div class="trow scenery"><span class="pre">' + esc(r.pre) + '</span><span class="tnm">' + esc(r.n) + "</span></div>";
+        continue;
+      }
+      h += '<button class="trow' + (hidden(p) ? " gone" : "") + '" style="--fc:var(' + fcOf(p) + ')"' +
+           ' data-id="' + p.id + '" data-on="' + (on[p.id] ? 1 : 0) + '" data-sel="' + (selPart === p.id ? 1 : 0) + '"' +
+           ' aria-label="' + esc(p.name) + " · " + (on[p.id] ? "in your project" : "not authored") +
+           (hidden(p) ? ", not in the repo — no teammate has it" : "") +
+           (selPart === p.id ? ". Press to remove." : ". Press to inspect.") + '">' +
+           '<span class="pre">' + esc(r.pre) + '</span><span class="tdot"></span>' +
+           '<span class="tnm">' + esc(r.n) + "</span>" +
+           (p.legacy ? '<span class="badge legacy sp">legacy</span>' : "") + "</button>";
+    }
+    return h + "</div>";
+  }
+
+  // ---- RENDER: tray ----
+  function renderTray() {
+    if (lens === "folder") {
+      $("tray").innerHTML = renderTree();
+      wireTray();
+      return;
+    }
+    var groups = GROUPS[lens], h = "";
+    for (var g = 0; g < groups.length; g++) {
+      var mine = [];
+      for (var i = 0; i < PARTS.length; i++) if (keyFor(PARTS[i], lens) === groups[g].k) mine.push(PARTS[i]);
+      if (!mine.length) continue;
+      var nOn = 0;
+      for (var m = 0; m < mine.length; m++) if (live(mine[m])) nOn++;
+      h += '<div class="grp" style="--gc:var(' + groups[g].c + ')">';
+      h += '<div class="grp-hd">' + groups[g].label + '<span class="n">' + nOn + "/" + mine.length + "</span></div>";
+      for (var j = 0; j < mine.length; j++) {
+        var p = mine[j];
+        h += '<button class="part' + (hidden(p) ? " gone" : "") + '" style="--fc:var(' + fcOf(p) + ')"' +
+             ' data-id="' + p.id + '" data-on="' + (on[p.id] ? 1 : 0) + '" data-sel="' + (selPart === p.id ? 1 : 0) + '"' +
+             ' aria-label="' + esc(p.name) + " · " + (on[p.id] ? "in your project" : "not authored") + (hidden(p) ? ", hidden from teammates" : "") +
+             (selPart === p.id ? ". Press to remove from project." : ". Press to inspect.") + '">' +
+             '<span class="dot"></span><span class="pnm">' + esc(p.name) + "</span>" +
+             (p.legacy ? '<span class="badge legacy sp">legacy</span>' : "") +
+             (p.reach === "org" ? '<span class="badge org sp">no override</span>' : "") +
+             "</button>";
+      }
+      h += "</div>";
+    }
+    $("tray").innerHTML = h;
+    wireTray();
+  }
+
+  // One contract for both views: first click inspects, second click authors or
+  // removes. Scenery rows are plain divs and never match.
+  function wireTray() {
+    var btns = $("tray").querySelectorAll("button[data-id]");
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].addEventListener("click", function () {
+        var id = this.getAttribute("data-id");
+        if (selPart === id) { on[id] = !on[id]; sent = false; } else selPart = id;
+        lastFocus = id;
+        render();
+      });
+    }
+  }
+
+  // ---- RENDER: detail ----
+  function renderDetail() {
+    var p = byId(selPart), el = $("detail");
+    el.style.setProperty("--fc", "var(" + fcOf(p) + ")");
+    var whenTxt = { start:"every session", "file-match":"on a matching file read", invoke:"when invoked", delegate:"when delegated to", event:"on a lifecycle event" }[p.when];
+    var reachTxt = { laptop:"your laptop only", team:"committed to git", org:"deployed by IT" }[p.reach];
+    var laneTxt = { ctx:"enters the prompt", gate:"never enters the prompt", tools:"adds tools" }[p.lane];
+
+    var h = '<div class="d-top">' +
+      '<span class="d-force">' + forceLabel(p) + "</span>" +
+      (p.legacy ? '<span class="badge legacy">legacy</span>' : "") +
+      '<span class="d-path">' + esc(p.path) + "</span></div>" +
+      "<h2>" + esc(p.name) + "</h2>" +
+      '<p class="d-lede">' + p.lede + "</p>" +
+      '<div class="facts">' +
+        '<div class="fact"><div class="fl">loads</div><div class="fv">' + whenTxt + "</div></div>" +
+        '<div class="fact"><div class="fl">reaches</div><div class="fv">' + reachTxt + "</div></div>" +
+        '<div class="fact"><div class="fl">in the prompt?</div><div class="fv">' + laneTxt + "</div></div>" +
+      "</div>";
+
+    if (p.fm && p.fm.length) {
+      h += '<div class="subhead">frontmatter keys · all real</div><p class="d-lede" style="margin-bottom:0">';
+      for (var i = 0; i < p.fm.length; i++) h += '<span class="mono-inline" style="margin:0 4px 4px 0;display:inline-block">' + esc(p.fm[i]) + "</span>";
+      h += "</p>";
+    }
+    h += '<div class="subhead">' + (p.lane === "gate" ? "what it looks like" : "what you write") + "</div><pre class=\"code\" id=\"pcode\"></pre>";
+    h += '<div class="gotcha"><b>The catch.</b> ' + p.gotcha + "</div>";
+    h += '<div class="d-ref"><b>Source [' + p.ref + "]</b> · " + p.refT + "</div>";
+    el.innerHTML = h;
+    $("pcode").textContent = codeFor(p);
+  }
+
+  // ---- RENDER: the two machines ----
+  function renderCols() {
+    var ctx = [], gate = [], i, p;
+    for (i = 0; i < PARTS.length; i++) {
+      p = PARTS[i];
+      if (!live(p)) continue;
+      if (p.lane === "gate") gate.push(p); else ctx.push(p);
+    }
+    var alwaysW = 0;
+    for (i = 0; i < ctx.length; i++) if (ctx[i].when === "start") alwaysW += ctx[i].weight;
+
+    $("ctxCnt").textContent = ctx.length + " file" + (ctx.length === 1 ? "" : "s");
+    $("gateCnt").textContent = gate.length + " file" + (gate.length === 1 ? "" : "s");
+    $("ctxRows").innerHTML = rowsHTML(ctx, true) +
+      (ctx.length ? '<p class="col-sub" style="margin:12px 0 0;padding-top:10px;border-top:1px solid var(--border)">' +
+        (alwaysW ? "Everything above marked <b style=\"color:var(--ink)\">always</b> is paid for on every turn, forever — the bars are relative weight, not tokens." : "Nothing always-on. Everything here is paid for only when needed.") + "</p>" : "");
+    $("gateRows").innerHTML = rowsHTML(gate, false) +
+      (gate.length ? '<p class="col-sub" style="margin:12px 0 0;padding-top:10px;border-top:1px solid var(--border)">Zero context cost. These are matched by the harness, not read by the model.</p>' : "");
+  }
+
+  function rowsHTML(list, showW) {
+    if (!list.length) return '<div class="empty">nothing authored</div>';
+    var h = "", whenShort = { start:"always", "file-match":"on match", invoke:"on call", delegate:"on call", event:"on event" };
+    for (var i = 0; i < list.length; i++) {
+      var p = list[i];
+      h += '<div class="row"><span class="rnm">' + esc(p.name) + "</span>" +
+           '<span class="rwhen">' + whenShort[p.when] + "</span>";
+      if (showW) {
+        h += '<span class="rw">';
+        for (var w = 0; w < 5; w++) h += "<i" + (w < p.weight ? ' class="f"' : "") + "></i>";
+        h += "</span>";
+      }
+      h += "</div>";
+    }
+    return h;
+  }
+
+  // ---- RENDER: the probe ----
+  function renderProbe() {
+    var h = "", i;
+    for (i = 0; i < ACTIONS.length; i++) {
+      h += '<button class="act" data-a="' + ACTIONS[i].id + '" aria-pressed="' + (act === ACTIONS[i].id) + '">' + esc(ACTIONS[i].label) + "</button>";
+    }
+    $("acts").innerHTML = h;
+    var ab = $("acts").querySelectorAll(".act");
+    for (i = 0; i < ab.length; i++) ab[i].addEventListener("click", function () { act = this.getAttribute("data-a"); sent = false; render(); });
+
+    var opts = [{ id:"md-proj", label:"CLAUDE.md", c:"--adv" }, { id:"set-proj", label:"settings.json deny", c:"--enf" }, { id:"hooks", label:"a PreToolUse hook", c:"--enf" }];
+    h = "";
+    for (i = 0; i < opts.length; i++) {
+      h += '<button class="seg-btn" style="--sbc:var(' + opts[i].c + ')" data-i="' + opts[i].id + '" aria-pressed="' + (intentIn === opts[i].id) + '">' + opts[i].label + "</button>";
+    }
+    $("intentBtns").innerHTML = h;
+    var ib = $("intentBtns").querySelectorAll(".seg-btn");
+    for (i = 0; i < ib.length; i++) ib[i].addEventListener("click", function () { intentIn = this.getAttribute("data-i"); sent = false; render(); });
+
+    $("predict").textContent = sent ? "Change anything above and send it again." : "Decide what you think happens. Then send it.";
+    renderTrace();
+  }
+
+  // --enf is reserved, strictly, for "the harness acted". Absence and omission
+  // are --ink-faint. If the colour meant "alarm" it would stop meaning anything.
+  function renderTrace() {
+    var a = null, i;
+    for (i = 0; i < ACTIONS.length; i++) if (ACTIONS[i].id === act) a = ACTIONS[i];
+    var steps = [], stop = null;
+
+    // 1. context assembly — everything always-on that is authored and reachable
+    var always = [];
+    for (i = 0; i < PARTS.length; i++) if (live(PARTS[i]) && PARTS[i].lane === "ctx" && PARTS[i].when === "start") always.push(PARTS[i].name);
+    steps.push({ c: always.length ? "--adv" : "--ink-faint", t:"context assembled",
+      d: always.length ? "In the prompt: <b>" + esc(always.join(", ")) + "</b>. Advice, weighed by the model." : "Nothing always-on is authored. Claude starts with no project context at all." });
+
+    // 2. rules that match this action's file read
+    if (a.match) {
+      for (i = 0; i < a.match.length; i++) {
+        var r = byId(a.match[i]);
+        if (live(r)) steps.push({ c:"--adv", t:"rule matched", d:"Claude read a file matching <b>" + esc(r.path) + "</b>'s <code>paths</code> glob, so the rule loaded now — and not a turn earlier." });
+      }
+    }
+    if (a.invokes) {
+      var sk = byId(a.invokes);
+      if (live(sk)) steps.push({ c:"--tools", t:"skill invoked", d:"<b>" + esc(sk.name) + "</b> loads on invocation and runs in a fork — its output stays in the subagent, only the verdict returns." });
+      else steps.push({ c:"--ink-faint", t:"nothing to invoke", d:"No such skill is authored, so <code>/deploy-check</code> is not a command that exists." });
+    }
+
+    // 3. the intent — the same sentence, filed in one of three places
+    if (a.carries) {
+      var host = byId(intentIn);
+      if (!live(host)) {
+        steps.push({ c:"--ink-faint", t:"rule not authored", d:"You filed the rule in <b>" + esc(host.name) + "</b> — but it is not in your project, so nobody ever said it." });
+      } else if (intentIn === "md-proj") {
+        steps.push({ c:"--adv", t:"advice read", d:"<b>CLAUDE.md</b> says “never push to main”. Claude reads it — text in the prompt, competing with every other line in the prompt. <b>Nothing checks it.</b>" });
+      } else if (intentIn === "set-proj") {
+        stop = { t:"permission gate", by:".claude/settings.json", how:"<code>deny</code> matched <code>Bash(git push:*)</code>" };
+      } else if (intentIn === "hooks") {
+        stop = { t:"hook intercepted", by:"a PreToolUse hook", how:"<code>matcher: Bash</code> narrowed to the tool, <code>if: Bash(git push:*)</code> narrowed to the arguments, <code>guard.sh</code> ran and exited <b>2</b>" };
+      }
+    }
+
+    // 4. the gate, for actions that do not carry the intent
+    if (a.deny && !a.carries && live(byId("set-proj"))) {
+      stop = { t:"permission gate", by:".claude/settings.json", how:"<code>deny</code> matched <code>" + esc(a.deny) + "</code>" };
+    }
+
+    if (stop) {
+      steps.push({ c:"--enf", t:stop.t, d: stop.how + " in <b>" + esc(stop.by) + "</b>. The harness stopped it. Claude never saw the rule and was never asked." });
+    } else if (a.tool !== "Skill") {
+      var why = (a.carries && intentIn === "md-proj")
+        ? "Nothing in <b>settings.json</b> denies <code>Bash(git push:*)</code> — you filed the rule in a file the gate never reads."
+        : "No <code>deny</code> matches <code>" + esc(a.tool) + "</code>.";
+      steps.push({ c:"--adv", t:"permission gate", d: why + " The gate lets it through." });
+    }
+
+    var h = "";
+    for (i = 0; i < steps.length; i++) {
+      h += '<li class="tstep" style="--sc:var(' + steps[i].c + ')"><span class="ti"></span><span class="tb">' +
+           '<span class="tt">' + steps[i].t + "</span>" +
+           '<span class="td">' + steps[i].d + "</span></span></li>";
+    }
+    $("trace").innerHTML = h;
+    $("trace").className = "trace" + (sent ? "" : " stale");
+
+    var v = $("verdict");
+    if (!sent) {
+      v.style.setProperty("--vc", "var(--ink-faint)");
+      v.innerHTML = "Press <b>send</b> to run it.";
+      return;
+    }
+    if (stop) {
+      v.style.setProperty("--vc", "var(--enf)");
+      v.innerHTML = "<b>Blocked.</b> The tool never ran. It held because you filed it somewhere the <em>harness</em> reads — not somewhere Claude reads.";
+    } else if (a.carries && !live(byId(intentIn))) {
+      v.style.setProperty("--vc", "var(--ink-faint)");
+      v.innerHTML = "<b>Nothing stopped it — and nothing said anything either.</b> You filed the rule in <b>" + esc(byId(intentIn).name) +
+        "</b>, which is not in your project. Click it in the tray to author it, then send again.";
+    } else if (a.carries && intentIn === "md-proj" && live(byId("md-proj"))) {
+      // deliberately --adv, not --enf: nothing was enforced. That is the lesson.
+      v.style.setProperty("--vc", "var(--adv)");
+      v.innerHTML = "<b>It went through.</b> Your rule sat in the prompt the entire time and the push happened anyway. Claude <em>probably</em> complies with CLAUDE.md — but probably is not a guardrail. You are looking at the ceiling of the advisory machine. File the same sentence in <b>settings.json deny</b> or <b>a PreToolUse hook</b>, and send it again.";
+    } else {
+      v.style.setProperty("--vc", "var(--adv)");
+      v.innerHTML = "<b>Allowed.</b> Nothing enforced stood in the way, so this came down to Claude's judgement.";
+    }
+  }
+
+  function render() {
+    renderLenses(); renderTray(); renderDetail(); renderCols(); renderProbe();
+    // innerHTML replaced the node that had focus; put it back or the keyboard
+    // path is unusable (focus falls to body after every single click).
+    if (lastFocus && document.activeElement === document.body) {
+      var n = document.querySelector('[data-id="' + lastFocus + '"]');
+      if (n && n.focus) n.focus();
+    }
+  }
+
+  $("mateBox").addEventListener("change", function () { mate = this.checked; sent = false; render(); });
+  $("sendBtn").addEventListener("click", function () { sent = true; render(); });
+
+  // ---- theme (choice persisted locally; nothing leaves the page) ----
+  var themeBtn = $("themeBtn");
+  function currentDark() {
+    var root = document.documentElement;
+    return root.getAttribute("data-theme") === "dark" ||
+      (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  }
+  function paintThemeBtn() {
+    themeBtn.textContent = currentDark() ? "☀ light" : "☾ dark";
+    themeBtn.setAttribute("aria-pressed", currentDark() ? "true" : "false");
+  }
+  try {
+    var saved = localStorage.getItem("files-theme");
+    if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+  } catch (e) {}
+  paintThemeBtn();
+  themeBtn.addEventListener("click", function () {
+    var next = currentDark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("files-theme", next); } catch (e) {}
+    paintThemeBtn();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

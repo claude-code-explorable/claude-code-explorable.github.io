@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Under the hood of Claude Code — an explorable</title>
+<style>
+  /* ---------- Tokens: light default, dark + explicit toggle override ---------- */
+  :root {
+    --bg:#eeefec; --surface:#f8f9f7; --surface-2:#e6e8e3; --border:#d9dad3;
+    --ink:#201e18; --ink-dim:#5b584f; --ink-faint:#8a867c; --accent:#c6613c;
+
+    /* the six stages of one turn */
+    --assemble:#1f8a8c; --shape:#c1892c; --model:#7a5cc4; --auth:#c14b5a; --execute:#3f8f4e; --loop:#c6613c;
+
+    /* context sources colored by WHEN they load (paper, Figure 6) */
+    --t-start:#4f7fd6;   /* at startup */
+    --t-turn:#c6613c;    /* per turn (grows) */
+    --t-exec:#3f8f4e;    /* during execution (grows) */
+    --t-demand:#7a5cc4;  /* on demand / after compaction */
+
+    --code-bg:#14120d; --code-panel:#1b1913; --code-ink:#e5e1d7; --code-dim:#8b8578; --code-line:#2a271f;
+    --shadow:0 1px 2px rgba(30,26,18,.05), 0 8px 30px rgba(30,26,18,.06);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --r:14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#17150f; --surface:#201e17; --surface-2:#29271f; --border:#322f26;
+      --ink:#ede9df; --ink-dim:#a8a399; --ink-faint:#726e64; --accent:#e8926b;
+      --assemble:#55c7c9; --shape:#e0b45c; --model:#b49bf0; --auth:#e58a97; --execute:#6fc178; --loop:#e8926b;
+      --t-start:#7ba3e8; --t-turn:#e8926b; --t-exec:#6fc178; --t-demand:#b49bf0;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#17150f; --surface:#201e17; --surface-2:#29271f; --border:#322f26;
+    --ink:#ede9df; --ink-dim:#a8a399; --ink-faint:#726e64; --accent:#e8926b;
+    --assemble:#55c7c9; --shape:#e0b45c; --model:#b49bf0; --auth:#e58a97; --execute:#6fc178; --loop:#e8926b;
+    --t-start:#7ba3e8; --t-turn:#e8926b; --t-exec:#6fc178; --t-demand:#b49bf0;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+  }
+  :root[data-theme="light"] {
+    --bg:#eeefec; --surface:#f8f9f7; --surface-2:#e6e8e3; --border:#d9dad3;
+    --ink:#201e18; --ink-dim:#5b584f; --ink-faint:#8a867c; --accent:#c6613c;
+    --assemble:#1f8a8c; --shape:#c1892c; --model:#7a5cc4; --auth:#c14b5a; --execute:#3f8f4e; --loop:#c6613c;
+    --t-start:#4f7fd6; --t-turn:#c6613c; --t-exec:#3f8f4e; --t-demand:#7a5cc4;
+    --shadow:0 1px 2px rgba(30,26,18,.05), 0 8px 30px rgba(30,26,18,.06);
+  }
+
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  .wrap { max-width:1080px; margin:0 auto; padding:clamp(20px,5vw,56px) clamp(16px,4vw,40px) 72px; }
+
+  /* Header */
+  header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+  .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 14px; display:inline-flex; align-items:center; gap:9px; }
+  .eyebrow::before { content:""; width:22px; height:1px; background:var(--accent); opacity:.6; }
+  h1 { font-size:clamp(30px,5.4vw,50px); line-height:1.02; letter-spacing:-0.02em; font-weight:680; margin:0 0 16px; text-wrap:balance; max-width:17ch; }
+  h1 em { font-style:normal; color:var(--accent); }
+  .lede { font-size:clamp(16px,2.1vw,19px); color:var(--ink-dim); max-width:64ch; margin:0; }
+  .lede b { color:var(--ink); font-weight:620; }
+  .theme-btn { flex:0 0 auto; font-family:var(--mono); font-size:12px; letter-spacing:.04em; color:var(--ink-dim); background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:8px 14px; cursor:pointer; white-space:nowrap; transition:color .15s, border-color .15s, background .15s; }
+  .theme-btn:hover { color:var(--ink); border-color:var(--ink-faint); }
+
+  /* The loop, annotated — full width, above the interactive */
+  .loopcard { margin-top:30px; }
+  .loopcard-cap { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); margin:0 2px 9px; }
+  .loopcode { margin:0; background:var(--code-bg); border:1px solid var(--code-line); border-radius:12px; padding:16px 18px; overflow-x:auto; font-family:var(--mono); font-size:13px; line-height:1.75; color:var(--code-ink); white-space:pre; box-shadow:var(--shadow); }
+  .loopcode .kw { color:#e8a45c; }
+  .loopcode .fn { color:#74c4c0; }
+  .loopcode .cm { color:var(--code-dim); }
+
+  /* Layout */
+  .stage { margin-top:40px; display:grid; grid-template-columns:minmax(0,360px) 1fr; gap:26px; align-items:start; }
+  @media (max-width:860px) { .stage { grid-template-columns:1fr; } }
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); box-shadow:var(--shadow); }
+
+  /* Pipeline */
+  .pipe { padding:18px 18px 20px; }
+  .kicker { font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); margin:2px 2px 6px; }
+  .kicker.tight { margin-bottom:14px; }
+  .pipe-note { font-size:12px; color:var(--ink-dim); margin:0 2px 14px; }
+  .band { position:relative; width:100%; text-align:left; cursor:pointer; background:var(--surface-2); border:1px solid var(--border); border-left:3px solid var(--stage); border-radius:11px; padding:12px 14px; display:block; transition:border-color .18s, background .18s, transform .05s, box-shadow .18s; color:inherit; font:inherit; }
+  .band:hover { border-color:var(--ink-faint); }
+  .band:active { transform:translateY(1px); }
+  .band[data-sel="1"] { background:color-mix(in srgb, var(--stage) 12%, var(--surface)); border-color:color-mix(in srgb, var(--stage) 55%, var(--border)); box-shadow:0 0 0 1px color-mix(in srgb, var(--stage) 40%, transparent); }
+  .band[data-active="1"] { animation:bandpulse 1.3s ease-in-out infinite; }
+  @keyframes bandpulse { 0%,100% { box-shadow:0 0 0 1px color-mix(in srgb, var(--stage) 30%, transparent); } 50% { box-shadow:0 0 0 4px color-mix(in srgb, var(--stage) 26%, transparent); } }
+  .band-top { display:flex; align-items:center; gap:9px; margin-bottom:2px; }
+  .band-no { font-family:var(--mono); font-size:11px; font-weight:700; color:var(--stage); flex:0 0 auto; min-width:26px; }
+  .band-name { font-size:14px; font-weight:620; letter-spacing:-0.01em; color:var(--ink); }
+  .band-who { font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--stage); border:1px solid color-mix(in srgb, var(--stage) 40%, transparent); background:color-mix(in srgb, var(--stage) 12%, transparent); border-radius:999px; padding:2px 6px; margin-left:auto; }
+  .band-sub { font-family:var(--mono); font-size:11px; color:var(--ink-dim); margin-top:2px; padding-left:26px; }
+  .connector { display:flex; justify-content:center; color:var(--ink-faint); font-size:14px; height:16px; line-height:16px; }
+  .loopback { margin-top:10px; display:flex; align-items:center; gap:8px; justify-content:center; font-family:var(--mono); font-size:11px; color:var(--loop); border:1px dashed color-mix(in srgb, var(--loop) 50%, var(--border)); background:color-mix(in srgb, var(--loop) 7%, transparent); border-radius:999px; padding:7px 12px; text-align:center; }
+  .whileloop { margin-top:14px; font-family:var(--mono); font-size:11px; color:var(--ink-faint); background:var(--code-bg); color:var(--code-ink); border-radius:9px; padding:11px 13px; line-height:1.5; overflow-x:auto; }
+  .whileloop .c { color:var(--code-dim); }
+  .whileloop .k { color:#e8a45c; }
+
+  /* Detail */
+  .detail { padding:22px 24px; min-height:440px; }
+  .detail-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+  .d-no { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--dstage); }
+  .d-who { font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dstage); border:1px solid color-mix(in srgb, var(--dstage) 40%, transparent); background:color-mix(in srgb, var(--dstage) 12%, transparent); border-radius:999px; padding:3px 9px; }
+  .d-tag { font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin-left:auto; }
+  .detail h2 { font-size:23px; line-height:1.14; letter-spacing:-0.01em; margin:0 0 8px; font-weight:640; text-wrap:balance; }
+  .d-lede { color:var(--ink-dim); font-size:15px; margin:0 0 16px; }
+  .d-body p { margin:0 0 12px; color:var(--ink-dim); font-size:14.5px; }
+  .d-body p:last-child { margin-bottom:0; }
+  .d-body b { color:var(--ink); font-weight:620; }
+  .d-body code, .mono-inline { font-family:var(--mono); font-size:.86em; background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:1px 5px; color:var(--ink); }
+  .callout { margin:14px 0 4px; padding:13px 15px; border-radius:10px; border:1px dashed color-mix(in srgb, var(--model) 55%, var(--border)); background:color-mix(in srgb, var(--model) 8%, transparent); font-size:13.5px; color:var(--ink-dim); }
+  .callout b { color:var(--model); }
+
+  /* Inspector (sources) */
+  .subhead { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); margin:18px 0 8px; }
+  .sources { list-style:none; margin:0; padding:0; }
+  .source { width:100%; text-align:left; font:inherit; color:inherit; cursor:pointer; display:flex; align-items:center; gap:10px; padding:8px 9px; border-radius:9px; border:1px solid transparent; background:transparent; transition:background .15s, border-color .15s; }
+  .source:hover { background:var(--surface-2); }
+  .source[data-sel="1"] { background:var(--surface-2); border-color:var(--border); }
+  .source.gone { opacity:.4; }
+  .source i { width:9px; height:9px; border-radius:3px; background:var(--lc); flex:0 0 auto; }
+  .source .snm { font-size:13.5px; font-weight:560; color:var(--ink); }
+  .source .swhen { font-family:var(--mono); font-size:9.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--lc); border:1px solid color-mix(in srgb, var(--lc) 35%, transparent); border-radius:999px; padding:1px 6px; margin-left:2px; }
+  .source .stok { margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--ink-dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .source .stok.grow { color:var(--t-turn); }
+  .sample { margin-top:12px; }
+  .sample-head { font-family:var(--mono); font-size:11px; color:var(--ink-faint); margin-bottom:6px; display:flex; align-items:center; gap:8px; line-height:1.4; }
+  .sample-head i { width:9px; height:9px; border-radius:2px; background:var(--lc); flex:0 0 auto; }
+  pre.code { margin:0; background:var(--code-bg); border:1px solid var(--code-line); border-radius:10px; padding:13px 15px; overflow-x:auto; font-family:var(--mono); font-size:12.5px; line-height:1.55; color:var(--code-ink); white-space:pre; box-shadow:var(--shadow); }
+
+  /* Compaction pipeline */
+  .shapers { list-style:none; margin:0; padding:0; }
+  .shaper { display:flex; gap:11px; padding:9px 0; border-top:1px solid var(--border); opacity:.5; transition:opacity .25s; }
+  .shaper:first-child { border-top:none; }
+  .shaper.on { opacity:1; }
+  .shaper .sn { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--shape); flex:0 0 auto; width:18px; }
+  .shaper .sbody { flex:1; }
+  .shaper .sname { font-size:14px; font-weight:620; color:var(--ink); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .shaper .sflag { font-family:var(--mono); font-size:9.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); border:1px solid var(--border); background:var(--surface-2); border-radius:999px; padding:1px 6px; }
+  .shaper .sdesc { font-size:13px; color:var(--ink-dim); margin-top:2px; }
+  .shaper .fired { font-family:var(--mono); font-size:10px; color:var(--shape); margin-left:auto; flex:0 0 auto; align-self:center; opacity:0; }
+  .shaper.on .fired { opacity:1; }
+  .pressure { margin:16px 0 4px; }
+  .pressure-top { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px; font-family:var(--mono); font-size:12px; color:var(--ink-dim); }
+  .pressure-top b { color:var(--shape); font-variant-numeric:tabular-nums; }
+  .pressure input[type=range] { width:100%; accent-color:var(--shape); cursor:pointer; }
+  .pressure-note { margin-top:10px; font-size:13px; color:var(--ink-dim); }
+
+  /* Authorization */
+  .authflow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0 4px; }
+  .authstep { font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:6px 9px; }
+  .authflow .arr { color:var(--ink-faint); }
+  .modes { display:flex; flex-wrap:wrap; gap:7px; margin:8px 0 0; }
+  .mode { font-family:var(--mono); font-size:11.5px; padding:4px 10px; border-radius:999px; border:1px solid color-mix(in srgb, var(--auth) 35%, var(--border)); color:var(--auth); background:color-mix(in srgb, var(--auth) 8%, transparent); }
+  .mode .mx { color:var(--ink-faint); }
+  .gradient-cap { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); margin-top:8px; }
+  .fact { margin-top:14px; padding:12px 14px; border-radius:10px; border:1px solid color-mix(in srgb, var(--auth) 30%, var(--border)); background:color-mix(in srgb, var(--auth) 7%, transparent); font-size:13.5px; color:var(--ink-dim); }
+  .fact b { color:var(--auth); }
+
+  /* Subagent isolation demo (stage 5) */
+  .sa-note-lead { font-size:13px; color:var(--ink-dim); margin:0 0 14px; }
+  .sa-stack { display:flex; flex-direction:column; gap:5px; }
+  .sa-row { display:flex; align-items:center; gap:10px; }
+  .sa-tag { font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); width:82px; flex:0 0 auto; text-align:right; }
+  .sa-bar { flex:1; min-width:0; height:22px; border-radius:6px; background:var(--surface-2); border:1px solid var(--border); overflow:hidden; display:flex; }
+  .sa-bar > i { height:100%; display:block; }
+  .sa-row.parent .sa-bar > i { background:var(--assemble); }
+  .sa-row.summary .sa-bar > i { background:var(--t-demand); }
+  .sa-bar.sub { gap:2px; padding:0 2px; align-items:center; }
+  .sa-bar.sub > i { flex:1; height:14px; border-radius:2px; background:var(--execute); }
+  .sa-tok { font-family:var(--mono); font-size:11px; color:var(--ink-dim); width:118px; flex:0 0 auto; white-space:nowrap; text-align:right; font-variant-numeric:tabular-nums; }
+  .sa-conn { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); text-align:center; padding:3px 0; }
+  .sa-actions { margin-top:14px; }
+  .sa-btn { font-size:12px; }
+  .sa-msg { margin-top:14px; padding:11px 13px; border-radius:9px; font-size:13px; line-height:1.5; color:var(--ink-dim); border:1px solid var(--border); background:var(--surface-2); }
+  .sa-msg.ok { border-color:color-mix(in srgb, var(--execute) 35%, var(--border)); background:color-mix(in srgb, var(--execute) 8%, transparent); }
+  .sa-msg b { color:var(--ink); font-weight:620; }
+  .sa-msg.ok b { color:var(--execute); }
+
+  /* Stop conditions */
+  .stops { list-style:none; margin:6px 0 0; padding:0; }
+  .stops li { display:flex; gap:10px; padding:7px 0; border-top:1px solid var(--border); font-size:13.5px; color:var(--ink-dim); }
+  .stops li:first-child { border-top:none; }
+  .stops .sk { font-family:var(--mono); font-size:11px; color:var(--loop); flex:0 0 auto; width:16px; font-weight:700; }
+  .stops b { color:var(--ink); font-weight:600; }
+
+  /* Controls */
+  .controls { grid-column:1 / -1; display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 18px; }
+  button.ctrl { font-family:var(--mono); font-size:13px; font-weight:600; color:var(--ink); background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:9px 16px; cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition:border-color .15s, background .15s, color .15s, transform .05s; }
+  button.ctrl:hover { border-color:var(--ink-faint); }
+  button.ctrl:active { transform:translateY(1px); }
+  button.ctrl.primary { background:var(--accent); color:#fff; border-color:transparent; }
+  button.ctrl.primary:hover { filter:brightness(1.06); }
+  button.ctrl:disabled { opacity:.4; cursor:not-allowed; }
+  .turn-badge { margin-left:auto; font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-dim); border:1px solid var(--border); border-radius:999px; padding:5px 12px; background:var(--surface-2); }
+  .turn-badge b { color:var(--accent); font-weight:700; }
+
+  /* Prompt bar */
+  .promptwrap { grid-column:1 / -1; padding:20px 22px 22px; }
+  .prompt-head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+  .prompt-head h3 { font-size:15px; font-weight:620; margin:0; }
+  .prompt-total { font-family:var(--mono); font-size:13px; color:var(--ink-dim); }
+  .prompt-total b { color:var(--ink); font-variant-numeric:tabular-nums; }
+  .drop-toggle { margin-left:auto; display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; color:var(--ink-dim); cursor:pointer; user-select:none; }
+  .drop-toggle input { accent-color:var(--accent); width:15px; height:15px; cursor:pointer; }
+  .bar { display:flex; width:100%; height:46px; border-radius:10px; overflow:hidden; border:1px solid var(--border); background:var(--surface-2); }
+  .seg { position:relative; height:100%; background:var(--sc); cursor:pointer; transition:width .5s cubic-bezier(.4,0,.2,1), filter .15s, opacity .3s; min-width:0; }
+  .seg:hover { filter:brightness(1.1); }
+  .seg[data-sel="1"] { box-shadow:inset 0 0 0 2px rgba(255,255,255,.6); }
+  .seg.removed { flex:0 0 30px; background:repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 5px, var(--border) 5px, var(--border) 10px); }
+  .bar-legend { display:flex; flex-wrap:wrap; gap:6px 14px; margin-top:12px; }
+  .bar-legend button { display:inline-flex; align-items:center; gap:7px; font-family:var(--mono); font-size:11px; color:var(--ink-dim); background:none; border:none; cursor:pointer; padding:2px 0; }
+  .bar-legend button:hover { color:var(--ink); }
+  .bar-legend i { width:9px; height:9px; border-radius:3px; background:var(--lc); display:inline-block; }
+  .timing-key { display:flex; flex-wrap:wrap; gap:6px 16px; margin-top:14px; padding-top:12px; border-top:1px solid var(--border); font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); }
+  .timing-key span { display:inline-flex; align-items:center; gap:6px; }
+  .timing-key i { width:8px; height:8px; border-radius:2px; }
+  .blank-note { margin-top:14px; padding:12px 14px; border-radius:10px; border:1px dashed color-mix(in srgb, var(--accent) 50%, var(--border)); background:color-mix(in srgb, var(--accent) 7%, transparent); font-size:13.5px; color:var(--ink-dim); }
+  .blank-note b { color:var(--accent); }
+
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+
+  .howto { margin-top:34px; font-size:14px; color:var(--ink-dim); max-width:68ch; }
+  .howto b { color:var(--ink); font-weight:620; }
+  footer { margin-top:40px; padding-top:20px; border-top:1px solid var(--border); font-size:13px; color:var(--ink-faint); line-height:1.6; }
+  footer a { color:var(--accent); text-decoration:none; }
+  footer a:hover { text-decoration:underline; }
+
+  @media (prefers-reduced-motion: reduce) { * { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Explorable · source-grounded</p>
+      <h1>Under the hood of <em>Claude&nbsp;Code</em></h1>
+      <p class="lede">At its core, Claude Code is a <b>simple <span class="mono-inline">while</span>-loop</b> that calls the model, runs tools, and repeats. The model itself is a <b>stateless black box that only emits text</b>. Nearly all the engineering lives in the systems <em>around</em> that loop — context shaping, a deny-first permission gate, delegation. Click through one real turn to see them.</p>
+    </div>
+    <button class="theme-btn" id="themeBtn" aria-label="Toggle color theme">◐ theme</button>
+  </header>
+
+  <section class="loopcard">
+    <div class="loopcard-cap">the whole thing, in one glance · every stage below is just detail on one of these lines</div>
+    <pre class="loopcode"><span class="kw">while</span> (true) {
+  msgs = <span class="fn">assemble</span>();          <span class="cm">// gather context since the last compaction boundary</span>
+  msgs = <span class="fn">shape</span>();             <span class="cm">// run the five compaction layers to fit the window</span>
+  res  = <span class="fn">callModel</span>(msgs);     <span class="cm">// stream the model's response</span>
+  <span class="kw">if</span> (<span class="fn">noToolUse</span>(res)) <span class="kw">break</span>;  <span class="cm">// model returned only text → stop</span>
+  <span class="fn">execute</span>(<span class="fn">authorize</span>(res));    <span class="cm">// gate, then run the tool calls</span>
+}                             <span class="cm">// append tool_result, loop again</span></pre>
+  </section>
+
+  <div class="stage">
+    <!-- Pipeline -->
+    <section class="panel pipe">
+      <div class="kicker tight">one turn of the query loop</div>
+      <p class="pipe-note">The 9-step pipeline in <span class="mono-inline">query.ts</span>, grouped into six stages. Click any stage.</p>
+      <div id="pipe"></div>
+      <div class="loopback">⟲&nbsp; append tool_result → loop, until the model returns text with no tool calls</div>
+    </section>
+
+    <!-- Detail -->
+    <section class="panel detail" id="detail" style="--dstage:var(--assemble)"></section>
+
+    <!-- Controls -->
+    <div class="controls panel">
+      <button class="ctrl primary" id="runBtn">▶ Run one turn</button>
+      <button class="ctrl" id="stepBtn">Step ▸</button>
+      <button class="ctrl" id="resetBtn">⟲ Reset</button>
+      <span class="turn-badge" id="turnBadge">loop iterations: <b>0</b></span>
+    </div>
+
+    <!-- Prompt bar -->
+    <section class="panel promptwrap">
+      <div class="prompt-head">
+        <h3>What the model actually sees this turn</h3>
+        <span class="prompt-total" id="promptTotal"></span>
+        <label class="drop-toggle"><input type="checkbox" id="dropHistory" /> drop conversation history</label>
+      </div>
+      <div class="bar" id="bar"></div>
+      <div class="bar-legend" id="barLegend"></div>
+      <div class="timing-key">
+        <span><i style="background:var(--t-start)"></i>at startup</span>
+        <span><i style="background:var(--t-turn)"></i>per turn · grows</span>
+        <span><i style="background:var(--t-exec)"></i>during execution · grows</span>
+        <span><i style="background:var(--t-demand)"></i>on demand / post-compaction</span>
+      </div>
+      <div class="blank-note" id="blankNote" style="display:none"></div>
+    </section>
+  </div>
+
+  <p class="howto">
+    <b>How to read this.</b> The spine on the left is the real loop; the six stages map onto the nine steps of <span class="mono-inline">query.ts</span>. Click <b>1</b> to inspect the context window's real sources — colored by <em>when</em> they load. Click <b>2</b> and drag the length slider — or press <b>Run one turn</b> — to grow the conversation and watch the five compaction layers fire in order, until auto-compact resets the pressure. <b>3</b> is the one box that stays shut on purpose. <b>4</b> is the deny-first gate with its seven modes. In <b>5</b>, delegate to a subagent and watch only its summary return. Press <b>Run one turn</b> to advance the loop and watch the prompt bar grow and sawtooth; tick <b>drop conversation history</b> to see the stateless model go blank.
+  </p>
+
+  <footer>
+    Grounded in <a href="https://arxiv.org/abs/2604.14228">“Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems”</a> (Liu, Zhao, Shang &amp; Shen, VILA Lab / MBZUAI, 2026) — a source-level analysis of Claude Code's TypeScript — and the <a href="https://code.claude.com/docs/en/how-claude-code-works">How Claude Code works</a> docs. Named mechanisms (<span class="mono-inline">query.ts</span>, the five context shapers, the seven permission modes) are the paper's. The model's internals are left closed on purpose — that box is genuinely opaque. Self-contained: no fonts, scripts, or assets from the network. See also explorable <a href="../02-agentic-loop/">02 · the agentic loop</a>.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------------
+  // STAGES — the six stages of one turn, mapped to the 9 query.ts steps.
+  // Content grounded in the "Dive into Claude Code" source-level analysis.
+  // ---------------------------------------------------------------------------
+  var STAGES = [
+    {
+      id:"assemble", steps:"1–3", who:"harness", stage:"--assemble", panel:"inspector",
+      tag:"getMessagesAfterCompactBoundary()",
+      name:"Assemble the context",
+      lede:"Settings resolve, one mutable State object is initialized, and every message since the last compaction boundary is gathered.",
+      body:
+        '<p>The model is <b>stateless</b> — it recalls nothing between calls. So each iteration the harness rebuilds the whole context window from scratch, out of the sources below. They load at <b>different times</b>: some once at startup, some every turn, some only when a tool runs, some lazily on demand.</p>' +
+        '<p>One nuance the source reveals: your <span class="mono-inline">CLAUDE.md</span> is delivered as a <b>user message</b>, not as the system prompt. So it is <em>guidance</em> the model probably follows — the deterministic enforcement lives later, in the permission rules (stage&nbsp;4).</p>'
+    },
+    {
+      id:"shape", steps:"4", who:"harness", stage:"--shape", panel:"compaction",
+      tag:"five pre-model context shapers",
+      name:"Shape it to fit",
+      lede:"Five compression layers run in sequence — lightest first — so the context fits the window before the model is ever called.",
+      body:
+        '<p>Context is the scarce resource. Rather than one blunt truncation, Claude Code applies a <b>graduated pipeline</b>: apply the least disruptive compression first, escalate only if pressure remains. Drag the slider — or press <b>Run one turn</b> — to grow the conversation and watch pressure climb until <b>auto-compact</b> fires and resets it. The same pressure drives the prompt bar below.</p>'
+    },
+    {
+      id:"model", steps:"5", who:"the model", stage:"--model", panel:null,
+      tag:"streaming callModel()",
+      name:"Call the model",
+      lede:"The assembled text streams in; a stream of text comes back. That is the entire interface.",
+      body:
+        '<p>A <span class="mono-inline">for await</span> loop streams the response. The output is just <b>text</b> — some meant for you, some structured <b>tool_use</b> requests like <code>Edit{ file_path, old_string, new_string }</code>. This is the <b>ReAct</b> pattern: the model reasons and proposes actions; it <em>cannot itself</em> touch a file or run a command. It can only ask, in text.</p>' +
+        '<div class="callout"><b>The one box I can\'t open honestly.</b> The paper reverse-engineers everything <em>around</em> the model from source. What happens <em>inside</em> the network — between the last input token and the first output token — is not in that source, and I can\'t introspect my own weights or activations. This box is genuinely opaque, to me too. Anyone drawing its insides in confident detail is guessing.</div>' +
+        '<p>It is also stateless: same text in, and it has no memory of ever having answered before. Every bit of "memory" lives back in stage&nbsp;1.</p>'
+    },
+    {
+      id:"authorize", steps:"6–7", who:"harness", stage:"--auth", panel:"auth",
+      tag:"deny-first permission gate",
+      name:"Dispatch & authorize",
+      lede:"tool_use blocks flow to the orchestrator; every one passes a deny-first gate before it can run.",
+      body:
+        '<p>The orchestrator classifies each call as <b>concurrent-safe</b> (reads run in parallel) or <b>exclusive</b> (shell commands and edits are serialized). Then each request hits the permission pipeline, which <b>denies first</b>: a deny rule always beats an allow, and blanket-denied tools are stripped before the model even sees them.</p>' +
+        '<p>A block is a <b>routing signal</b>, not a hard stop — the model gets the reason and tries a safer path next iteration.</p>'
+    },
+    {
+      id:"execute", steps:"8", who:"harness", stage:"--execute", panel:"execute",
+      tag:"real side effects · maybe a subagent",
+      name:"Execute & collect",
+      lede:"Approved tools actually run — files change, commands execute — and results return as tool_result messages.",
+      body:
+        '<p>This is where anything <b>real</b> happens. A <span class="mono-inline">StreamingToolExecutor</span> runs tools as they arrive but <b>buffers results back in request order</b>, because the model expects them in the order it asked. If a Bash tool errors, a <b>sibling abort</b> kills the other in-flight subprocesses.</p>' +
+        '<p>Heavy exploration can be handed to a <b>subagent</b> (the <span class="mono-inline">Agent</span> tool) — its own isolated context, its own tool set. Crucially, only its <b>final summary</b> returns to the parent; the subagent\'s full transcript never enters the main context window. Isolation keeps the "context as bottleneck" honest.</p>'
+    },
+    {
+      id:"loop", steps:"9", who:"harness", stage:"--loop", panel:"stop",
+      tag:"stop or repeat",
+      name:"Loop or stop",
+      lede:"No tool calls? The turn ends and you get text. Otherwise results are appended and the whole loop runs again.",
+      body:
+        '<p>Tool results are <b>appended</b> — session storage is mostly append-only, so nothing already written is rewritten. Then control returns to stage&nbsp;1 with a context now larger by everything that just happened.</p>' +
+        '<p>Five conditions can end the loop:</p>'
+    }
+  ];
+
+  // ---------------------------------------------------------------------------
+  // Context-window sources (stage 1 inspector + the prompt bar). Colored by
+  // WHEN they load. tok = approximate tokens; some grow every turn.
+  // ---------------------------------------------------------------------------
+  var SOURCES = [
+    { id:"system",  name:"System prompt",       when:"startup",   cvar:"--t-start", tok:2400,
+      desc:"Identity, environment, rules — plus output-style and --append-system-prompt content.",
+      sample:"You are Claude Code, Anthropic's official CLI for Claude.\nassembled via asSystemPrompt(appendSystemContext(...))\n\nPlatform: win32   Shell: PowerShell\nModel: claude-opus-4-8[1m]" },
+    { id:"env",     name:"Environment info",    when:"startup",   cvar:"--t-start", tok:320,
+      desc:"getSystemContext(): git status and build context. Memoized once per session.",
+      sample:"cwd:    C:\\Users\\Bhaskarjit\\gen-ai-explorables\ngit:    branch main · 3 files modified\nis a git repository: true" },
+    { id:"claudemd",name:"CLAUDE.md hierarchy", when:"startup",   cvar:"--t-start", tok:900,
+      desc:"getUserContext(): four levels — managed → user → project → local. Delivered as a USER message, not the system prompt.",
+      sample:"# CLAUDE.md  (project)\nStatic GitHub Pages site of explorables. Single file,\nzero deps, data-driven, themed.\n\n~/.claude/CLAUDE.md  (user)  ... prepended via prependUserContext()" },
+    { id:"tools",   name:"Tool metadata",       when:"startup",   cvar:"--t-start", tok:3400,
+      desc:"Built-in tool schemas, skill descriptions, MCP tool names. Blanket-denied tools are stripped here.",
+      sample:"[\n  { \"name\":\"Read\", \"parameters\":{ \"file_path\":\"string\" } },\n  { \"name\":\"Edit\", \"parameters\":{\n      \"file_path\",\"old_string\",\"new_string\" } },\n  { \"name\":\"Bash\", ... }, Grep, Glob, Agent, ...\n]" },
+    { id:"memory",  name:"Auto memory",         when:"per turn",  cvar:"--t-turn",  tok:700,
+      desc:"Not embeddings — an LLM scan of memory-file HEADERS picks up to 5 relevant files, at file granularity.",
+      sample:"[relevant memory · ≤5 files by header scan]\nGen AI Explorables — NN-slug folders; add a card to\nindex.html + a row to README.md when adding one." },
+    { id:"history", name:"Conversation history",when:"per turn",  cvar:"--t-turn",  tok:7900, grows:true,
+      desc:"Every prior message — the model's ONLY memory. Re-sent in full, every turn, subject to compaction.",
+      sample:"user:      add an explorable on how Claude Code works\nassistant: [tool] Read 02-agentic-loop/index.html\ntool:      <!DOCTYPE html> ... 583 lines ...\nassistant: grounding it in the arXiv source paper...\n           ...this slice grows every iteration..." },
+    { id:"results", name:"Tool results",        when:"execution", cvar:"--t-exec",  tok:3200, grows:true,
+      desc:"File reads, command outputs, subagent summaries — appended as tool_result messages during the turn.",
+      sample:"tool_result (Bash):  PAGES 46  CHARS 183561\ntool_result (Read):  index.html · 620 lines\ntool_result (Agent): [subagent summary only]" },
+    { id:"compact", name:"Compact summary",     when:"post-compaction", cvar:"--t-demand", tok:0,
+      desc:"After auto-compact fires, a model-generated summary REPLACES old history segments. 0 until then — then it grows as history shrinks.",
+      sample:"[auto-compact summary]\nOnce context pressure crosses the threshold, a model-\nwritten summary replaces the oldest history. This block\ngrows from 0 as the raw history it replaces shrinks —\ndrag stage 2's slider (or Run turns) to watch it appear." },
+    { id:"deferred",name:"Deferred tool defs",  when:"on demand", cvar:"--t-demand", tok:0,
+      desc:"Full schemas for extra tools, loaded only when the model asks for them via ToolSearch.",
+      sample:"[loaded lazily via ToolSearch — full JSON schema\n pulled in only when a deferred tool is actually\n needed, keeping the base context small]" }
+  ];
+
+  // The five-layer compaction pipeline (stage 2). pressure = % at which it fires.
+  var SHAPERS = [
+    { name:"Budget reduction", flag:"always active", fires:12,
+      desc:"Caps each tool result's size, swapping oversized output for a content reference." },
+    { name:"Snip", flag:"HISTORY_SNIP", fires:35,
+      desc:"A lightweight trim of older history segments." },
+    { name:"Microcompact", flag:"CACHED_MICROCOMPACT", fires:55,
+      desc:"Fine-grained, cache-aware compression keyed by tool_use_id." },
+    { name:"Context collapse", flag:"CONTEXT_COLLAPSE", fires:74,
+      desc:"A read-time projection: the model sees a collapsed view, full history stays on disk." },
+    { name:"Auto-compact", flag:"default on", fires:90,
+      desc:"A full model-generated summary replaces old history — the only layer visible in your transcript." }
+  ];
+
+  var MODES = [
+    { n:"plan", d:"approve the plan first" },
+    { n:"default", d:"ask for most actions" },
+    { n:"acceptEdits", d:"auto-approve in-dir edits" },
+    { n:"auto", d:"ML classifier decides" },
+    { n:"dontAsk", d:"no prompts, denies still hold" },
+    { n:"bypassPermissions", d:"skip most prompts" },
+    { n:"bubble", d:"internal · subagent escalation" }
+  ];
+
+  var STOPS = [
+    { k:"1", t:"<b>No tool use</b> — the model returns text only. The primary stop." },
+    { k:"2", t:"<b>Max turns</b> — the configurable maxTurns limit is hit." },
+    { k:"3", t:"<b>Context overflow</b> — the API returns prompt_too_long after recovery fails." },
+    { k:"4", t:"<b>Hook intervention</b> — a PostToolUse hook sets hook_stopped_continuation." },
+    { k:"5", t:"<b>Explicit abort</b> — the abort signal fires (you pressed Esc)." }
+  ];
+
+  var AUTH_STEPS = ["Pre-filter", "PreToolUse hook", "Deny-first rules", "Handler"];
+
+  var BASE_HISTORY = 7900, GROWTH_H = 1500;
+  var BASE_RESULTS = 3200, GROWTH_R = 1100;
+
+  // --- One shared state: turns → context load → pressure → compaction ----------
+  // Illustrative token budget (real windows are far larger; these numbers are
+  // scaled so the dynamics are legible). Auto-compact fires at the same threshold
+  // as the fifth shaper; a compaction replaces old history+results with a summary
+  // ~1/4 the size, keeping only a small recent window — producing a sawtooth.
+  var WINDOW_BUDGET = 34000, MAXTURNS = 12;
+  var REC_FLOOR_H = 1400, REC_FLOOR_R = 700, SUMMARY_RATIO = 0.25;
+  var AUTOCOMPACT_AT = SHAPERS[4].fires;   // the auto-compact layer's firing point
+  // Tokens that do NOT grow with the conversation (startup + memory).
+  var STATIC_TOK = 0;
+  for (var _si = 0; _si < SOURCES.length; _si++) {
+    var _sid = SOURCES[_si].id;
+    if (_sid !== "history" && _sid !== "results" && _sid !== "compact") STATIC_TOK += SOURCES[_si].tok;
+  }
+
+  // Deterministic replay of the conversation up to `n` turns, so any slider value
+  // (not just an incremental Run) yields the correct post-compaction state.
+  var _cvT = -1, _cv = null;
+  function convAt(n){
+    if (n === _cvT) return _cv;
+    var histFloor = BASE_HISTORY, resFloor = BASE_RESULTS, anchor = 0, summary = 0, comp = 0, hist, res;
+    for (var t = 0; t <= n; t++){
+      hist = histFloor + (t - anchor) * GROWTH_H;
+      res  = resFloor + (t - anchor) * GROWTH_R;
+      if ((STATIC_TOK + summary + hist + res) / WINDOW_BUDGET * 100 >= AUTOCOMPACT_AT){
+        summary = Math.round((hist + res + summary) * SUMMARY_RATIO);  // old history+results → summary
+        histFloor = REC_FLOOR_H; resFloor = REC_FLOOR_R; anchor = t;   // keep only a recent window
+        hist = histFloor; res = resFloor; comp++;
+      }
+    }
+    _cvT = n; _cv = { hist:hist, res:res, summary:summary, compactions:comp };
+    return _cv;
+  }
+  function pressurePct(){ return Math.max(0, Math.min(100, Math.round(totalTok() / WINDOW_BUDGET * 100))); }
+  function rep(s, n){ var o = ""; while (n-- > 0) o += s; return o; }
+
+  // ---------------------------------------------------------------------------
+  // STATE
+  // ---------------------------------------------------------------------------
+  var selStage = "assemble", selSource = "history";
+  var activeStage = null, turns = 0, dropHistory = false, subStep = 0;
+  var running = false, timer = null;
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function stageById(id){ for(var i=0;i<STAGES.length;i++) if(STAGES[i].id===id) return STAGES[i]; return null; }
+  function sourceById(id){ for(var i=0;i<SOURCES.length;i++) if(SOURCES[i].id===id) return SOURCES[i]; return null; }
+  function fmt(n){ return n.toLocaleString ? n.toLocaleString("en-US") : String(n); }
+
+  function sourceTok(s){
+    if (s.id==="history") return dropHistory ? 0 : convAt(turns).hist;
+    if (s.id==="results") return convAt(turns).res;
+    if (s.id==="compact") return convAt(turns).summary;   // grows from 0 once auto-compact fires
+    return s.tok;
+  }
+  function totalTok(){ var t=0; for(var i=0;i<SOURCES.length;i++) t+=sourceTok(SOURCES[i]); return t; }
+
+  // ---------------------------------------------------------------------------
+  // RENDER: pipeline
+  // ---------------------------------------------------------------------------
+  function renderPipe(){
+    var html="";
+    for(var i=0;i<STAGES.length;i++){
+      var s=STAGES[i];
+      html +=
+        '<button class="band" style="--stage:var('+s.stage+')" data-id="'+s.id+'"'+
+          ' data-sel="'+(s.id===selStage?1:0)+'" data-active="'+(s.id===activeStage?1:0)+'"'+
+          ' aria-pressed="'+(s.id===selStage)+'">'+
+          '<div class="band-top">'+
+            '<span class="band-no">'+s.steps+'</span>'+
+            '<span class="band-name">'+s.name+'</span>'+
+            '<span class="band-who">'+s.who+'</span>'+
+          '</div>'+
+          '<div class="band-sub">'+s.tag+'</div>'+
+        '</button>';
+      if(i<STAGES.length-1) html+='<div class="connector">↓</div>';
+    }
+    $("pipe").innerHTML=html;
+    var bands=$("pipe").querySelectorAll(".band");
+    for(var j=0;j<bands.length;j++){
+      bands[j].addEventListener("click", function(){ selStage=this.getAttribute("data-id"); render(); });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Special panels
+  // ---------------------------------------------------------------------------
+  function inspectorHTML(){
+    var html='<div class="subhead">context window · '+SOURCES.length+' sources</div><ul class="sources">';
+    for(var i=0;i<SOURCES.length;i++){
+      var s=SOURCES[i], tk=sourceTok(s), gone=(s.id==="history"&&dropHistory);
+      var tokTxt = gone ? "removed" : (tk===0 ? "—" : "~"+fmt(tk));
+      html+='<li><button class="source'+(gone?' gone':'')+'" style="--lc:var('+s.cvar+')" data-id="'+s.id+'" data-sel="'+(s.id===selSource?1:0)+'">'+
+        '<i></i><span class="snm">'+s.name+'</span>'+
+        '<span class="swhen">'+s.when+'</span>'+
+        '<span class="stok'+(s.grows?' grow':'')+'">'+tokTxt+'</span>'+
+      '</button></li>';
+    }
+    html+='</ul>';
+    var sl=sourceById(selSource);
+    html+='<div class="sample"><div class="sample-head"><i style="background:var('+sl.cvar+')"></i>'+sl.name+' — '+sl.desc+'</div><pre class="code" id="sampleCode"></pre></div>';
+    return html;
+  }
+
+  function compactionHTML(){
+    var p = pressurePct(), conv = convAt(turns);
+    var html='<div class="subhead">the five layers · lightest first</div><ul class="shapers">';
+    for(var i=0;i<SHAPERS.length;i++){
+      var sh=SHAPERS[i], on=(p>=sh.fires);
+      html+='<li class="shaper'+(on?' on':'')+'">'+
+        '<span class="sn">'+(i+1)+'</span>'+
+        '<span class="sbody"><span class="sname">'+sh.name+' <span class="sflag">'+sh.flag+'</span></span>'+
+        '<span class="sdesc">'+sh.desc+'</span></span>'+
+        '<span class="fired">▲ fired</span>'+
+      '</li>';
+    }
+    html+='</ul>';
+    var active=0; for(var k=0;k<SHAPERS.length;k++) if(p>=SHAPERS[k].fires) active++;
+    var note = active===0 ? "Plenty of room — no compression needed yet."
+      : active===SHAPERS.length ? "Full pressure: all five layers are compressing, ending in a model-written summary of the conversation."
+      : "Layers 1–"+active+" have fired. Cheaper trims run first; the expensive model summary is held back until it's truly needed.";
+    if(conv.compactions>0) note += " <b>Auto-compact has fired "+conv.compactions+"×</b> — each time, the oldest history collapsed into the Compact summary and pressure dropped. Watch the prompt bar below sawtooth as you drag.";
+    html+='<div class="pressure"><div class="pressure-top"><span>conversation length · <b>'+turns+'</b> turn'+(turns===1?'':'s')+'</span><span>context <b id="pVal">'+p+'%</b> full</span></div>'+
+      '<input type="range" id="turnRange" min="0" max="'+MAXTURNS+'" value="'+turns+'" step="1" aria-label="Conversation length in turns" /></div>'+
+      '<div class="pressure-note" id="pNote">'+note+'</div>';
+    return html;
+  }
+
+  function authHTML(){
+    var flow='<div class="subhead">authorization pipeline</div><div class="authflow">';
+    for(var i=0;i<AUTH_STEPS.length;i++){
+      flow+='<span class="authstep">'+AUTH_STEPS[i]+'</span>';
+      if(i<AUTH_STEPS.length-1) flow+='<span class="arr">→</span>';
+    }
+    flow+='</div>';
+    var modes='<div class="subhead">seven permission modes</div><div class="modes">';
+    for(var m=0;m<MODES.length;m++){ modes+='<span class="mode">'+MODES[m].n+' <span class="mx">· '+MODES[m].d+'</span></span>'; }
+    modes+='</div><div class="gradient-cap"><span>← plan · most oversight</span><span>least oversight · bypass →</span></div>';
+    var fact='<div class="fact"><b>Why deny-first?</b> Anthropic\'s own analysis found users approve <b>~93%</b> of permission prompts. Approval fatigue makes the human an unreliable last line — so safety can\'t depend on you reading every dialog. Deny rules, pre-filtering, and sandboxing hold <em>regardless</em> of what you click.</div>';
+    return flow+modes+fact;
+  }
+
+  function executeHTML(){
+    var parentTok = totalTok();
+    var html='<div class="subhead">subagent context isolation · try it</div>'+
+      '<p class="sa-note-lead">Heavy exploration can be handed to a subagent. Watch what actually returns to the main context.</p>'+
+      '<div class="sa-stack">'+
+        '<div class="sa-row parent"><span class="sa-tag">main context</span><div class="sa-bar"><i style="width:'+(subStep===2?76:70)+'%"></i></div>'+
+          '<span class="sa-tok">~'+fmt(subStep===2?parentTok+800:parentTok)+' tok</span></div>';
+    if(subStep===0){
+      html+='</div><div class="sa-actions"><button class="ctrl sa-btn" data-sa="run">Delegate exploration to a subagent ▸</button></div>';
+    } else if(subStep===1){
+      html+='<div class="sa-conn">delegates ↓ into its own fresh context</div>'+
+        '<div class="sa-row sub"><span class="sa-tag">subagent</span><div class="sa-bar sub">'+rep('<i></i>',16)+'</div>'+
+          '<span class="sa-tok">~24,000 tok · 18 msgs</span></div>'+
+        '</div>'+
+        '<div class="sa-msg">The subagent runs in its <b>own</b> window — own system prompt, own tool reads, its own growing transcript. <b>None</b> of it is in the main context.</div>'+
+        '<div class="sa-actions"><button class="ctrl sa-btn" data-sa="ret">Return summary to parent ▸</button></div>';
+    } else {
+      html+='<div class="sa-conn">only the summary crosses back ↑</div>'+
+        '<div class="sa-row summary"><span class="sa-tag">summary</span><div class="sa-bar"><i style="width:7%"></i></div>'+
+          '<span class="sa-tok">~800 tok</span></div>'+
+        '</div>'+
+        '<div class="sa-msg ok">Only the final <b>summary</b> (~800 tok) entered the main context. The subagent\'s 24,000-token transcript was discarded — <b>isolation keeps the "context as bottleneck" honest.</b></div>'+
+        '<div class="sa-actions"><button class="ctrl sa-btn" data-sa="reset">↺ Reset</button></div>';
+    }
+    return html;
+  }
+
+  function stopHTML(){
+    var html='<ul class="stops">';
+    for(var i=0;i<STOPS.length;i++){ html+='<li><span class="sk">'+STOPS[i].k+'</span><span>'+STOPS[i].t+'</span></li>'; }
+    html+='</ul>';
+    return html;
+  }
+
+  // ---------------------------------------------------------------------------
+  // RENDER: detail
+  // ---------------------------------------------------------------------------
+  function renderDetail(){
+    var s=stageById(selStage), el=$("detail");
+    el.style.setProperty("--dstage","var("+s.stage+")");
+    var html=
+      '<div class="detail-top">'+
+        '<span class="d-no">STEP '+s.steps+'</span>'+
+        '<span class="d-who">'+s.who+'</span>'+
+        '<span class="d-tag">'+s.tag+'</span>'+
+      '</div>'+
+      '<h2>'+s.name+'</h2>'+
+      '<p class="d-lede">'+s.lede+'</p>'+
+      '<div class="d-body">'+s.body+'</div>';
+
+    if(s.panel==="inspector")  html+=inspectorHTML();
+    else if(s.panel==="compaction") html+=compactionHTML();
+    else if(s.panel==="auth")  html+=authHTML();
+    else if(s.panel==="execute") html+=executeHTML();
+    else if(s.panel==="stop")  html+=stopHTML();
+
+    el.innerHTML=html;
+
+    if(s.panel==="inspector"){
+      $("sampleCode").textContent=sourceById(selSource).sample;
+      var rows=el.querySelectorAll(".source");
+      for(var k=0;k<rows.length;k++) rows[k].addEventListener("click", function(){ selSource=this.getAttribute("data-id"); render(); });
+    } else if(s.panel==="compaction"){
+      $("turnRange").addEventListener("input", function(){ turns=parseInt(this.value,10); render(); });
+    } else if(s.panel==="execute"){
+      var sbtns=el.querySelectorAll("[data-sa]");
+      for(var b=0;b<sbtns.length;b++) sbtns[b].addEventListener("click", function(){
+        var a=this.getAttribute("data-sa");
+        subStep = a==="run" ? 1 : a==="ret" ? 2 : 0;
+        renderDetail();
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // RENDER: prompt bar
+  // ---------------------------------------------------------------------------
+  function renderBar(){
+    var total=totalTok();
+    $("promptTotal").innerHTML="one prompt · <b>~"+fmt(total)+"</b> tokens";
+    var barHtml="", legHtml="";
+    for(var i=0;i<SOURCES.length;i++){
+      var s=SOURCES[i], tk=sourceTok(s), gone=(s.id==="history"&&dropHistory);
+      if(tk===0 && !gone) continue; // skip zero-token sources in the bar
+      if(gone){
+        barHtml+='<div class="seg removed" style="--sc:var('+s.cvar+')" data-id="'+s.id+'" title="history removed"></div>';
+      } else {
+        var pct= total>0 ? (tk/total*100) : 0;
+        barHtml+='<div class="seg" style="--sc:var('+s.cvar+');width:'+pct.toFixed(2)+'%" data-id="'+s.id+'"'+
+          ' data-sel="'+(s.id===selSource&&selStage==="assemble"?1:0)+'" title="'+s.name+' · ~'+fmt(tk)+' tok"></div>';
+      }
+      legHtml+='<button data-id="'+s.id+'" style="--lc:var('+s.cvar+')"><i></i>'+s.name+'</button>';
+    }
+    $("bar").innerHTML=barHtml;
+    $("barLegend").innerHTML=legHtml;
+    function pick(){ selStage="assemble"; selSource=this.getAttribute("data-id"); render(); }
+    var segs=$("bar").querySelectorAll(".seg"); for(var a=0;a<segs.length;a++) segs[a].addEventListener("click", pick);
+    var lg=$("barLegend").querySelectorAll("button"); for(var b=0;b<lg.length;b++) lg[b].addEventListener("click", pick);
+
+    var note=$("blankNote");
+    if(dropHistory){
+      note.style.display="block";
+      note.innerHTML='<b>The model just went blank.</b> With the conversation removed, this turn carries no record of what you asked, what it already did, or that these files exist — it would answer as if meeting you for the first time. That history is the model\'s <em>only</em> memory, and it lives in the harness, re-sent every iteration. Statelessness, made visible.';
+    } else { note.style.display="none"; }
+  }
+
+  function renderControls(){
+    $("turnBadge").innerHTML="loop iterations: <b>"+turns+"</b>";
+    $("runBtn").innerHTML= running ? "● running…" : "▶ Run one turn";
+    $("runBtn").disabled=running; $("stepBtn").disabled=running;
+  }
+
+  function render(){ renderPipe(); renderDetail(); renderBar(); renderControls(); }
+
+  // ---------------------------------------------------------------------------
+  // RUN one iteration through the six stages
+  // ---------------------------------------------------------------------------
+  var ORDER=["assemble","shape","model","authorize","execute","loop"];
+  function runTurn(){
+    if(running) return; running=true;
+    var i=0, dwell= reduce ? 300 : 950;
+    function tick(){
+      activeStage=ORDER[i]; selStage=ORDER[i]; render(); i++;
+      if(i<ORDER.length){ timer=setTimeout(tick, dwell); }
+      else { timer=setTimeout(function(){ activeStage=null; running=false; turns=Math.min(turns+1,MAXTURNS); selStage="loop"; render(); }, dwell); }
+    }
+    tick();
+  }
+  function stepOnce(){
+    var idx=ORDER.indexOf(selStage);
+    if(idx===ORDER.length-1){ turns=Math.min(turns+1,MAXTURNS); selStage="assemble"; } else { selStage=ORDER[idx+1]; }
+    activeStage=null; render();
+  }
+  function reset(){
+    if(timer){ clearTimeout(timer); timer=null; }
+    running=false; activeStage=null; turns=0; subStep=0;
+    selStage="assemble"; selSource="history"; dropHistory=false; $("dropHistory").checked=false; render();
+  }
+
+  $("runBtn").addEventListener("click", runTurn);
+  $("stepBtn").addEventListener("click", stepOnce);
+  $("resetBtn").addEventListener("click", reset);
+  $("dropHistory").addEventListener("change", function(){
+    dropHistory=this.checked;
+    if(dropHistory){ selStage="assemble"; selSource="history"; }
+    render();
+  });
+
+  $("themeBtn").addEventListener("click", function(){
+    var root=document.documentElement;
+    var isDark= root.getAttribute("data-theme")==="dark" || (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    root.setAttribute("data-theme", isDark ? "light" : "dark");
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

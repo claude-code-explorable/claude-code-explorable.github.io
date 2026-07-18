@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude Code, Explorable — an interactive field guide</title>
+<meta name="description" content="An interactive field guide to how Claude Code works and the files you own — each chapter is an idea you can operate, not just read." />
+<style>
+  /* ---------- Tokens: dark default, with light + explicit toggle override ---------- */
+  :root {
+    --bg:#141318; --panel:#1c1b22; --panel-2:#232229; --border:#2c2b34; --border-2:#3a3945;
+    --ink:#ecebf1; --ink-dim:#a7a5b2; --ink-faint:#6f6d7b;
+    --accent:#8b7fe0; --accent-2:#5aa2f0;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 40px rgba(0,0,0,.4);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg:#eef0ee; --panel:#f8f9f8; --panel-2:#e9ebe8; --border:#d9dbd5; --border-2:#c8cabf;
+      --ink:#1f1e22; --ink-dim:#585763; --ink-faint:#8a8894;
+      --accent:#6a5bcf; --accent-2:#2f7fd6;
+      --shadow:0 1px 2px rgba(25,22,30,.05), 0 10px 34px rgba(25,22,30,.08);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#141318; --panel:#1c1b22; --panel-2:#232229; --border:#2c2b34; --border-2:#3a3945;
+    --ink:#ecebf1; --ink-dim:#a7a5b2; --ink-faint:#6f6d7b; --accent:#8b7fe0; --accent-2:#5aa2f0;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 40px rgba(0,0,0,.4);
+  }
+  :root[data-theme="light"] {
+    --bg:#eef0ee; --panel:#f8f9f8; --panel-2:#e9ebe8; --border:#d9dbd5; --border-2:#c8cabf;
+    --ink:#1f1e22; --ink-dim:#585763; --ink-faint:#8a8894; --accent:#6a5bcf; --accent-2:#2f7fd6;
+    --shadow:0 1px 2px rgba(25,22,30,.05), 0 10px 34px rgba(25,22,30,.08);
+  }
+
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; -webkit-font-smoothing:antialiased; }
+  a { color:inherit; text-decoration:none; }
+  button { font-family:inherit; }
+
+  .book { display:flex; height:100vh; height:100dvh; overflow:hidden; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar { flex:0 0 302px; width:302px; background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; overflow-y:auto; }
+  .brand { padding:22px 22px 16px; border-bottom:1px solid var(--border); }
+  .brand a.home { display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); margin-bottom:14px; }
+  .brand a.home:hover { color:var(--ink-dim); }
+  .brand h1 { font-size:20px; line-height:1.12; letter-spacing:-0.01em; font-weight:720; margin:0 0 6px; }
+  .brand h1 em { font-style:normal; background:linear-gradient(100deg,var(--accent),var(--accent-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .brand p { margin:0; font-size:12.5px; color:var(--ink-dim); }
+
+  nav.toc { padding:12px 12px 8px; flex:1; }
+  .toc-label { font-family:var(--mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-faint); margin:6px 10px 8px; }
+  .toc-item { display:block; width:100%; text-align:left; background:none; border:1px solid transparent; border-radius:10px; padding:11px 12px; cursor:pointer; color:inherit; margin-bottom:4px; transition:background .15s, border-color .15s; }
+  .toc-item:hover { background:var(--panel-2); }
+  .toc-item[data-active="1"] { background:var(--panel-2); border-color:var(--border-2); }
+  .toc-item .ci-top { display:flex; align-items:center; gap:9px; }
+  .toc-item .ci-no { font-family:var(--mono); font-size:11px; font-weight:700; width:20px; height:20px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(135deg,var(--g1),var(--g2)); flex:0 0 auto; }
+  .toc-item .ci-title { font-size:13.5px; font-weight:600; letter-spacing:-0.01em; line-height:1.25; }
+  .toc-item .ci-tag { font-family:var(--mono); font-size:10px; color:var(--ink-faint); margin-top:5px; padding-left:29px; letter-spacing:.02em; }
+
+  .side-foot { padding:14px 18px 18px; border-top:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .side-foot .by { font-size:11.5px; color:var(--ink-faint); }
+  .side-foot .by b { color:var(--ink-dim); font-weight:600; }
+  .theme-btn { font-family:var(--mono); font-size:11px; letter-spacing:.03em; color:var(--ink-dim); background:var(--panel-2); border:1px solid var(--border); border-radius:999px; padding:7px 12px; cursor:pointer; white-space:nowrap; transition:.15s; }
+  .theme-btn:hover { color:var(--ink); border-color:var(--ink-faint); }
+
+  /* ---------- Reader ---------- */
+  .reader { flex:1; min-width:0; display:flex; flex-direction:column; }
+  .topbar { flex:0 0 auto; display:flex; align-items:center; gap:12px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--bg); min-height:56px; }
+  .menu-btn { display:none; background:var(--panel); border:1px solid var(--border); border-radius:8px; color:var(--ink-dim); cursor:pointer; padding:7px 10px; font-size:15px; line-height:1; }
+  .tb-label { min-width:0; }
+  .tb-eyebrow { font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); }
+  .tb-title { font-size:15px; font-weight:640; letter-spacing:-0.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .tb-actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+  .tb-btn { font-family:var(--mono); font-size:12px; color:var(--ink-dim); background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px 12px; cursor:pointer; display:inline-flex; align-items:center; gap:7px; transition:.15s; white-space:nowrap; }
+  .tb-btn:hover { color:var(--ink); border-color:var(--ink-faint); }
+  .tb-btn:disabled { opacity:.35; cursor:not-allowed; }
+  .tb-btn.icon { padding:8px 11px; }
+
+  .intro { flex:0 0 auto; display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--panel); }
+  .intro-text { min-width:0; font-size:13px; color:var(--ink-dim); }
+  .intro-text .mech { font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--ink-faint); margin-right:10px; }
+  .intro-nav { margin-left:auto; display:flex; gap:8px; flex:0 0 auto; }
+
+  .stage { flex:1; min-height:0; position:relative; background:var(--bg); }
+  iframe.explorable { width:100%; height:100%; border:0; display:block; background:var(--bg); }
+
+  /* ---------- Cover ---------- */
+  .cover { position:absolute; inset:0; overflow-y:auto; padding:clamp(28px,6vw,72px) clamp(20px,6vw,72px) 72px; }
+  .cover-inner { max-width:900px; margin:0 auto; }
+  .cover-eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.2em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 16px; }
+  .cover h2 { font-size:clamp(30px,6vw,54px); line-height:1.04; letter-spacing:-0.025em; font-weight:760; margin:0 0 18px; text-wrap:balance; max-width:18ch; }
+  .cover h2 em { font-style:normal; background:linear-gradient(100deg,var(--accent),var(--accent-2)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .cover .sub { font-size:clamp(16px,2.2vw,19px); color:var(--ink-dim); max-width:60ch; margin:0 0 30px; }
+  .cover .sub b { color:var(--ink); font-weight:620; }
+  .cover-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:16px; margin-top:8px; }
+  .cover-card { position:relative; display:block; width:100%; text-align:left; background:var(--panel); border:1px solid var(--border-2); border-radius:14px; padding:20px 20px 18px; cursor:pointer; color:inherit; overflow:hidden; transition:transform .16s ease, border-color .16s ease; }
+  .cover-card::before { content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--g1),var(--g2)); }
+  .cover-card:hover { transform:translateY(-3px); border-color:var(--ink-faint); }
+  .cover-card .cc-top { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+  .cover-card .cc-no { font-family:var(--mono); font-size:12px; font-weight:700; color:#fff; background:linear-gradient(135deg,var(--g1),var(--g2)); border-radius:7px; width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; }
+  .cover-card .cc-tag { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); margin-left:auto; border:1px solid var(--border-2); border-radius:999px; padding:3px 9px; }
+  .cover-card h3 { font-size:17px; font-weight:700; letter-spacing:-0.01em; line-height:1.2; margin:0 0 8px; }
+  .cover-card p { font-size:13px; color:var(--ink-dim); line-height:1.5; margin:0 0 14px; }
+  .cover-card .cc-open { font-family:var(--mono); font-size:12px; font-weight:600; color:var(--accent-2); }
+  .cover-note { margin-top:30px; font-size:13px; color:var(--ink-faint); max-width:64ch; }
+
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+
+  /* ---------- Mobile ---------- */
+  .scrim { display:none; }
+  @media (max-width:860px) {
+    .menu-btn { display:inline-flex; }
+    .sidebar { position:fixed; z-index:40; top:0; bottom:0; left:0; transform:translateX(-100%); transition:transform .22s ease; box-shadow:var(--shadow); }
+    .book[data-nav="open"] .sidebar { transform:translateX(0); }
+    .book[data-nav="open"] .scrim { display:block; position:fixed; inset:0; z-index:30; background:rgba(0,0,0,.5); }
+    .intro { flex-wrap:wrap; gap:10px; }
+    .intro-nav { margin-left:0; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition-duration:.001ms !important; } }
+</style>
+</head>
+<body>
+<div class="book" id="book" data-nav="closed">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <a class="home" href="https://bhaskarjitsarmah.github.io/gen-ai-explorables/" target="_blank" rel="noopener">← all explorables</a>
+      <h1>Claude&nbsp;Code, <em>Explorable</em></h1>
+      <p>An interactive field guide — each chapter is an idea you can operate, not just read.</p>
+    </div>
+    <nav class="toc" id="toc" aria-label="Table of contents"></nav>
+    <div class="side-foot">
+      <span class="by">by <b>Bhaskarjit Sarmah</b></span>
+      <button class="theme-btn" id="themeBtn" aria-label="Toggle color theme">◐ theme</button>
+    </div>
+  </aside>
+
+  <div class="scrim" id="scrim"></div>
+
+  <main class="reader">
+    <div class="topbar">
+      <button class="menu-btn" id="menuBtn" aria-label="Open table of contents">☰</button>
+      <div class="tb-label" id="tbLabel"></div>
+      <div class="tb-actions" id="tbActions"></div>
+    </div>
+    <div class="intro" id="intro" style="display:none"></div>
+    <div class="stage" id="stage"></div>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------------
+  // The book. Chapters are the Claude-Code explorables, embedded as interactive
+  // "figures". Add a chapter by appending here — no other change needed.
+  // ---------------------------------------------------------------------------
+  var CHAPTERS = [
+    {
+      id:"04", num:1, slug:"04-under-the-hood-of-claude-code",
+      title:"Under the hood of Claude Code",
+      tag:"Architecture · anatomy", mech:"inspect · compact · run",
+      g1:"#1f8a8c", g2:"#7a5cc4",
+      blurb:"A simple while-loop around a stateless black box. Grounded in a source-level analysis of Claude Code's TypeScript — trace the real query pipeline, inspect the context window's sources, drive the five-layer compaction pipeline, and meet the deny-first permission gate."
+    },
+    {
+      id:"05", num:2, slug:"05-the-files-you-own",
+      title:"The files you own in Claude Code",
+      tag:"Authoring · workbench", mech:"build · probe · ship",
+      g1:"#4a5bc4", g2:"#c0492f",
+      blurb:"Everything under .claude/ is a markdown file with frontmatter — a skill, a rule, and a subagent look almost identical. Most of what you write is advice the model can ignore; a little is a gate it never sees. Walk a real project tree, send a request through it, and find out which is which."
+    }
+  ];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var chapterById = function (id) { for (var i=0;i<CHAPTERS.length;i++) if (CHAPTERS[i].id===id) return CHAPTERS[i]; return null; };
+  var indexOfId = function (id) { for (var i=0;i<CHAPTERS.length;i++) if (CHAPTERS[i].id===id) return i; return -1; };
+
+  // ---- theme (persisted locally; nothing leaves the page) --------------------
+  var theme = null;
+  try { theme = localStorage.getItem("cce-theme"); } catch (e) {}
+  function effectiveDark() {
+    var r = document.documentElement.getAttribute("data-theme");
+    if (r) return r === "dark";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function applyTheme() {
+    if (theme === "dark" || theme === "light") document.documentElement.setAttribute("data-theme", theme);
+    $("themeBtn").textContent = effectiveDark() ? "☀ light" : "☾ dark";
+    $("themeBtn").setAttribute("aria-pressed", effectiveDark() ? "true" : "false");
+    syncFrameTheme();
+  }
+  // The embedded explorables are same-origin, so we can hand them the book's
+  // theme directly — one toggle controls chrome and figure together.
+  function syncFrameTheme() {
+    var f = document.querySelector("iframe.explorable");
+    if (!f) return;
+    try {
+      var d = f.contentDocument;
+      if (d && d.documentElement) d.documentElement.setAttribute("data-theme", effectiveDark() ? "dark" : "light");
+    } catch (e) {}
+  }
+  $("themeBtn").addEventListener("click", function () {
+    theme = effectiveDark() ? "light" : "dark";
+    try { localStorage.setItem("cce-theme", theme); } catch (e) {}
+    applyTheme();
+  });
+
+  // ---- sidebar (built once) --------------------------------------------------
+  function buildTOC() {
+    var html = '<div class="toc-label">Chapters</div>';
+    for (var i=0;i<CHAPTERS.length;i++) {
+      var c = CHAPTERS[i];
+      html +=
+        '<button class="toc-item" data-id="'+c.id+'" style="--g1:'+c.g1+';--g2:'+c.g2+'">'+
+          '<span class="ci-top"><span class="ci-no">'+c.num+'</span>'+
+          '<span class="ci-title">'+c.title+'</span></span>'+
+          '<span class="ci-tag">'+c.tag+'</span>'+
+        '</button>';
+    }
+    $("toc").innerHTML = html;
+    var items = $("toc").querySelectorAll(".toc-item");
+    for (var j=0;j<items.length;j++) {
+      items[j].addEventListener("click", function () { navTo(this.getAttribute("data-id")); });
+    }
+  }
+  function markActive(id) {
+    var items = $("toc").querySelectorAll(".toc-item");
+    for (var i=0;i<items.length;i++) items[i].setAttribute("data-active", items[i].getAttribute("data-id")===id ? "1" : "0");
+  }
+
+  // ---- navigation ------------------------------------------------------------
+  function navTo(id) { location.hash = id ? "#"+id : ""; closeNav(); }
+  function closeNav() { $("book").setAttribute("data-nav", "closed"); }
+
+  function render() {
+    var id = (location.hash || "").replace(/^#/, "");
+    var c = chapterById(id);
+    if (c) renderChapter(c); else renderCover();
+    markActive(c ? c.id : null);
+  }
+
+  function renderCover() {
+    document.title = "Claude Code, Explorable — an interactive field guide";
+    $("tbLabel").innerHTML = '<div class="tb-eyebrow">The book</div><div class="tb-title">Claude Code, Explorable</div>';
+    $("tbActions").innerHTML = '';
+    $("intro").style.display = "none";
+    var cards = "";
+    for (var i=0;i<CHAPTERS.length;i++) {
+      var c = CHAPTERS[i];
+      cards +=
+        '<button class="cover-card" data-id="'+c.id+'" style="--g1:'+c.g1+';--g2:'+c.g2+'">'+
+          '<div class="cc-top"><span class="cc-no">'+c.num+'</span><span class="cc-tag">'+c.tag+'</span></div>'+
+          '<h3>'+c.title+'</h3><p>'+c.blurb+'</p>'+
+          '<span class="cc-open">Read chapter '+c.num+' →</span>'+
+        '</button>';
+    }
+    $("stage").innerHTML =
+      '<div class="cover"><div class="cover-inner">'+
+        '<p class="cover-eyebrow">An interactive field guide</p>'+
+        '<h2>How Claude Code works — and the <em>files you own</em>.</h2>'+
+        '<p class="sub">Two chapters, each a self-contained interactive. First, <b>trace one turn</b> of the real query loop — context, compaction, the permission gate. Then <b>walk the files you author</b> and learn which are advice the model can ignore and which are gates it never sees. Nothing to install; everything runs right here.</p>'+
+        '<div class="cover-grid">'+cards+'</div>'+
+        '<p class="cover-note">Each chapter is the explorable itself, embedded live. Use the sidebar or ← → arrow keys to move between them; “Open full” lifts a chapter into its own tab.</p>'+
+      '</div></div>';
+    var cc = $("stage").querySelectorAll(".cover-card");
+    for (var k=0;k<cc.length;k++) cc[k].addEventListener("click", function () { navTo(this.getAttribute("data-id")); });
+  }
+
+  function renderChapter(c) {
+    document.title = "Ch. "+c.num+" · "+c.title+" — Claude Code, Explorable";
+    var idx = indexOfId(c.id);
+    var prev = idx>0 ? CHAPTERS[idx-1] : null;
+    var next = idx<CHAPTERS.length-1 ? CHAPTERS[idx+1] : null;
+
+    $("tbLabel").innerHTML = '<div class="tb-eyebrow">Chapter '+c.num+'</div><div class="tb-title">'+c.title+'</div>';
+    $("tbActions").innerHTML =
+      '<a class="tb-btn" href="'+c.slug+'/" target="_blank" rel="noopener">Open full ↗</a>';
+
+    $("intro").style.display = "";
+    $("intro").innerHTML =
+      '<div class="intro-text"><span class="mech">'+c.mech+'</span>'+c.blurb+'</div>'+
+      '<div class="intro-nav">'+
+        '<button class="tb-btn icon" id="prevBtn"'+(prev?'':' disabled')+' aria-label="Previous chapter">←</button>'+
+        '<button class="tb-btn" id="nextBtn"'+(next?'':' disabled')+'>'+(next?'Next: Ch. '+next.num+' →':'End →')+'</button>'+
+      '</div>';
+    if (prev) $("prevBtn").addEventListener("click", function () { navTo(prev.id); });
+    if (next) $("nextBtn").addEventListener("click", function () { navTo(next.id); });
+
+    // (Re)build the iframe only when the source actually changes, so re-renders
+    // (e.g. a theme toggle) don't reload and reset the reader's place.
+    var f = $("stage").querySelector("iframe.explorable");
+    var src = c.slug+"/index.html";
+    if (!f || f.getAttribute("data-slug") !== c.slug) {
+      $("stage").innerHTML = '<iframe class="explorable" data-slug="'+c.slug+'" title="'+c.title+'" src="'+src+'"></iframe>';
+      var nf = $("stage").querySelector("iframe.explorable");
+      nf.addEventListener("load", syncFrameTheme);
+    } else {
+      syncFrameTheme();
+    }
+  }
+
+  // ---- wiring ----------------------------------------------------------------
+  $("menuBtn").addEventListener("click", function () {
+    $("book").setAttribute("data-nav", $("book").getAttribute("data-nav")==="open" ? "closed" : "open");
+  });
+  $("scrim").addEventListener("click", closeNav);
+
+  document.addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    var id = (location.hash || "").replace(/^#/, ""), idx = indexOfId(id);
+    if (idx === -1) return;
+    if (e.key === "ArrowRight" && idx < CHAPTERS.length-1) { navTo(CHAPTERS[idx+1].id); e.preventDefault(); }
+    else if (e.key === "ArrowLeft" && idx > 0) { navTo(CHAPTERS[idx-1].id); e.preventDefault(); }
+  });
+
+  window.addEventListener("hashchange", render);
+
+  buildTOC();
+  applyTheme();
+  render();
+})();
+</script>
+</body>
+</html>
