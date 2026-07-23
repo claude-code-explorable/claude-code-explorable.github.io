@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Writing the files you own in Claude Code — an explorable</title>
+<style>
+  /* ---------- Tokens: light default, dark + explicit toggle override ---------- */
+  :root {
+    --bg:#eef0f4; --surface:#f9fafb; --surface-2:#e4e7ee; --border:#d4d8e2;
+    --ink:#1a1d25; --ink-dim:#545a68; --ink-faint:#63697a; --accent:#3f7a52;
+
+    /* the thesis palette: a line either earns its always-on seat, or it has a cheaper home */
+    --keep:#2f8f5f;   /* keep — it earns a seat in every prompt */
+    --cut:#b0475a;    /* cut — noise the model already has */
+    --rule:#4f7fd6;   /* path-scoped — loads only on a match */
+    --skill:#8a6ad0;  /* on-invoke — loads only when called */
+    --hook:#c76a2f;   /* enforced — the harness runs it every time */
+    --local:#8a8494;  /* personal — yours alone, gitignored */
+
+    --code-bg:#111319; --code-ink:#e3e6ee; --code-dim:#848a99;
+    --shadow:0 1px 2px rgba(20,24,40,.05), 0 8px 30px rgba(20,24,40,.06);
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --r:14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#12141a; --surface:#1a1d25; --surface-2:#232733; --border:#2d323f;
+      --ink:#e6e9f0; --ink-dim:#9ba2b3; --ink-faint:#7d8496; --accent:#63c48c;
+      --keep:#54c489; --cut:#e0788c; --rule:#7ba3e8; --skill:#ad93ea; --hook:#e5975c; --local:#a6a1b2;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:#12141a; --surface:#1a1d25; --surface-2:#232733; --border:#2d323f;
+    --ink:#e6e9f0; --ink-dim:#9ba2b3; --ink-faint:#7d8496; --accent:#63c48c;
+    --keep:#54c489; --cut:#e0788c; --rule:#7ba3e8; --skill:#ad93ea; --hook:#e5975c; --local:#a6a1b2;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 34px rgba(0,0,0,.45);
+  }
+  :root[data-theme="light"] {
+    --bg:#eef0f4; --surface:#f9fafb; --surface-2:#e4e7ee; --border:#d4d8e2;
+    --ink:#1a1d25; --ink-dim:#545a68; --ink-faint:#63697a; --accent:#3f7a52;
+    --keep:#2f8f5f; --cut:#b0475a; --rule:#4f7fd6; --skill:#8a6ad0; --hook:#c76a2f; --local:#8a8494;
+    --shadow:0 1px 2px rgba(20,24,40,.05), 0 8px 30px rgba(20,24,40,.06);
+  }
+
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.55; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+  .wrap { max-width:1100px; margin:0 auto; padding:clamp(20px,5vw,56px) clamp(16px,4vw,40px) 72px; }
+
+  /* Header */
+  header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+  .eyebrow { font-family:var(--mono); font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 14px; display:inline-flex; align-items:center; gap:9px; }
+  .eyebrow::before { content:""; width:22px; height:1px; background:var(--accent); opacity:.6; }
+  h1 { font-size:clamp(30px,5.4vw,50px); line-height:1.02; letter-spacing:-0.02em; font-weight:680; margin:0 0 16px; text-wrap:balance; max-width:18ch; }
+  h1 em { font-style:normal; color:var(--accent); }
+  .lede { font-size:clamp(16px,2.1vw,19px); color:var(--ink-dim); max-width:66ch; margin:0; }
+  .lede b { color:var(--ink); font-weight:620; }
+  .theme-btn { flex:0 0 auto; font-family:var(--mono); font-size:12px; letter-spacing:.04em; color:var(--ink-dim); background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:8px 14px; cursor:pointer; white-space:nowrap; transition:color .15s, border-color .15s, background .15s; }
+  .theme-btn:hover { color:var(--ink); border-color:var(--ink-faint); }
+
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); box-shadow:var(--shadow); }
+
+  /* Meter bar */
+  .meters { margin-top:36px; display:grid; grid-template-columns:1.2fr 1.2fr .8fr .8fr; gap:0; overflow:hidden; }
+  @media (max-width:760px) { .meters { grid-template-columns:1fr 1fr; } }
+  .meter { padding:15px 18px; }
+  .meter + .meter { border-left:1px solid var(--border); }
+  @media (max-width:760px) { .meter:nth-child(3) { border-left:none; } .meter:nth-child(3), .meter:nth-child(4) { border-top:1px solid var(--border); } }
+  .meter .ml { font-family:var(--mono); font-size:10px; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-faint); display:flex; align-items:center; gap:7px; }
+  .meter .mv { font-size:22px; font-weight:680; letter-spacing:-0.01em; margin-top:6px; font-variant-numeric:tabular-nums; color:var(--mc,var(--ink)); }
+  .meter .mv small { font-size:12.5px; font-weight:500; color:var(--ink-faint); letter-spacing:0; }
+  .bar { margin-top:9px; height:7px; border-radius:99px; background:var(--surface-2); overflow:hidden; }
+  .bar > span { display:block; height:100%; border-radius:99px; background:var(--mc,var(--ink-faint)); transition:width .4s cubic-bezier(.4,0,.2,1); }
+  .meter .mnote { font-size:11px; color:var(--ink-faint); margin-top:8px; line-height:1.4; }
+
+  /* Stage */
+  .stage { margin-top:22px; display:grid; grid-template-columns:minmax(0,460px) 1fr; gap:24px; align-items:start; }
+  @media (max-width:920px) { .stage { grid-template-columns:1fr; } }
+
+  /* Draft */
+  .draft { padding:15px 15px 18px; }
+  .draft-hd { display:flex; align-items:baseline; gap:10px; padding:2px 4px 12px; border-bottom:1px solid var(--border); margin-bottom:8px; }
+  .draft-hd .fn { font-family:var(--mono); font-size:13px; font-weight:640; color:var(--ink); }
+  .draft-hd .hint { font-family:var(--mono); font-size:10.5px; color:var(--ink-faint); margin-left:auto; }
+  .line { width:100%; text-align:left; font:inherit; color:inherit; cursor:pointer; display:flex; align-items:flex-start; gap:10px; padding:9px 9px; border-radius:10px; border:1px solid transparent; background:transparent; transition:background .15s, border-color .15s, opacity .2s; }
+  .line:hover { background:var(--surface-2); }
+  .line[data-sel="1"] { background:var(--surface-2); border-color:color-mix(in srgb, var(--hc) 50%, var(--border)); }
+  .line .lt { font-family:var(--mono); font-size:11.5px; line-height:1.5; color:var(--ink-dim); min-width:0; flex:1; }
+  .line .lt b { color:var(--ink); font-weight:600; }
+  .line[data-home="cut"] .lt { text-decoration:line-through; text-decoration-color:color-mix(in srgb, var(--cut) 70%, transparent); color:var(--ink-faint); }
+  .line[data-home="keep"][data-good="0"] .lt { color:var(--ink); }
+  .home-chip { flex:0 0 auto; font-family:var(--mono); font-size:8.5px; letter-spacing:.07em; text-transform:uppercase; border-radius:999px; padding:2px 7px; margin-top:1px; color:var(--hc); border:1px solid color-mix(in srgb, var(--hc) 45%, transparent); background:color-mix(in srgb, var(--hc) 11%, transparent); }
+  .line .mark { flex:0 0 auto; width:15px; text-align:center; font-size:12px; margin-top:1px; }
+  .line .mark.ok { color:var(--keep); }
+  .line .mark.no { color:var(--cut); }
+
+  /* Detail */
+  .detail { padding:20px 22px; min-height:440px; }
+  .d-top { display:flex; align-items:center; gap:9px; margin-bottom:12px; flex-wrap:wrap; }
+  .d-tag { font-family:var(--mono); font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); }
+  .d-live { font-family:var(--mono); font-size:10px; letter-spacing:.06em; text-transform:uppercase; margin-left:auto; padding:3px 9px; border-radius:999px; color:var(--hc); border:1px solid color-mix(in srgb, var(--hc) 40%, transparent); background:color-mix(in srgb, var(--hc) 12%, transparent); }
+  .d-quote { font-family:var(--mono); font-size:14px; line-height:1.55; color:var(--ink); background:var(--code-bg); color:var(--code-ink); border-radius:11px; padding:14px 16px; margin:0 0 16px; border-left:3px solid var(--hc); white-space:pre-wrap; }
+  .d-quote .dim { color:var(--code-dim); }
+  .facts { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:16px; }
+  .fact { background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:8px 10px; }
+  .fact .fl { font-family:var(--mono); font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink-faint); }
+  .fact .fv { font-size:13px; font-weight:600; color:var(--ink); margin-top:2px; }
+
+  .subhead { font-family:var(--mono); font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-faint); margin:0 0 9px; display:flex; align-items:center; gap:8px; }
+  .routes { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:8px; }
+  .route { font-family:var(--mono); font-size:11px; color:var(--ink-dim); background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:7px 10px; cursor:pointer; transition:.14s; display:inline-flex; align-items:center; gap:6px; }
+  .route:hover { color:var(--ink); border-color:var(--ink-faint); }
+  .route .rd { width:8px; height:8px; border-radius:3px; background:var(--rc); flex:0 0 auto; }
+  .route[aria-pressed="true"] { color:var(--rc); border-color:color-mix(in srgb, var(--rc) 60%, var(--border)); background:color-mix(in srgb, var(--rc) 13%, var(--surface)); font-weight:600; }
+  .route[data-best="1"]::after { content:"best"; font-size:8px; letter-spacing:.06em; text-transform:uppercase; color:var(--keep); border:1px solid color-mix(in srgb, var(--keep) 45%, transparent); border-radius:999px; padding:0 4px; }
+
+  .verdict-in { margin:14px 0 0; padding:13px 15px; border-radius:11px; border:1px solid color-mix(in srgb, var(--hc) 40%, var(--border)); background:color-mix(in srgb, var(--hc) 8%, transparent); font-size:13.5px; color:var(--ink-dim); line-height:1.5; }
+  .verdict-in b { color:var(--hc); }
+  .verdict-in code, .d-lede code, .rot code, .howto code, .lede code, .verdict-in .mono { font-family:var(--mono); font-size:.86em; background:var(--surface-2); border:1px solid var(--border); border-radius:5px; padding:1px 5px; color:var(--ink); }
+  .goes { margin-top:12px; font-size:12.5px; color:var(--ink-faint); font-family:var(--mono); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .goes b { color:var(--ink-dim); font-weight:600; }
+
+  /* rewrite flip */
+  .rewrite { margin-top:14px; border:1px dashed color-mix(in srgb, var(--keep) 50%, var(--border)); border-radius:11px; padding:13px 15px; background:color-mix(in srgb, var(--keep) 6%, transparent); }
+  .rw-row { display:flex; align-items:center; gap:10px; font-size:12.5px; margin-bottom:7px; }
+  .rw-row:last-of-type { margin-bottom:0; }
+  .rw-tag { font-family:var(--mono); font-size:9px; letter-spacing:.07em; text-transform:uppercase; border-radius:999px; padding:2px 7px; flex:0 0 auto; }
+  .rw-tag.b { color:var(--cut); border:1px solid color-mix(in srgb, var(--cut) 45%, transparent); }
+  .rw-tag.a { color:var(--keep); border:1px solid color-mix(in srgb, var(--keep) 45%, transparent); }
+  .rw-txt { font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+  .rw-txt.done { color:var(--ink); }
+  .rw-btn { margin-top:11px; font-family:var(--mono); font-size:11.5px; font-weight:600; color:#fff; background:var(--keep); border:1px solid var(--keep); border-radius:8px; padding:8px 13px; cursor:pointer; transition:filter .15s; }
+  .rw-btn:hover { filter:brightness(1.08); }
+  .rw-btn:disabled { opacity:.5; cursor:default; filter:none; }
+
+  .d-ref { margin-top:16px; border-top:1px solid var(--border); padding-top:11px; font-family:var(--mono); font-size:11px; color:var(--ink-faint); }
+  .d-ref b { color:var(--ink-dim); }
+  .d-ref a { color:var(--accent); }
+
+  /* file verdict banner */
+  .fverdict { margin-top:22px; padding:16px 20px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; border-left:4px solid var(--fvc,var(--ink-faint)); }
+  .fverdict .fv-big { font-size:15.5px; font-weight:640; color:var(--ink); }
+  .fverdict .fv-big b { color:var(--fvc,var(--ink)); }
+  .fverdict .fv-sub { font-size:13px; color:var(--ink-dim); margin-top:3px; }
+  .fverdict .fv-score { margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--ink-faint); text-align:right; flex:0 0 auto; }
+  .fverdict .fv-score b { font-size:20px; color:var(--ink); display:block; font-variant-numeric:tabular-nums; }
+  .fv-reset { font-family:var(--mono); font-size:11px; color:var(--ink-dim); background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:7px 11px; cursor:pointer; transition:.15s; }
+  .fv-reset:hover { color:var(--ink); border-color:var(--ink-faint); }
+
+  /* rule of thumb */
+  .rot { margin-top:24px; display:grid; grid-template-columns:1fr 1fr; gap:0; overflow:hidden; }
+  @media (max-width:680px) { .rot { grid-template-columns:1fr; } }
+  .rot-col { padding:18px 20px 20px; }
+  .rot-col + .rot-col { border-left:1px solid var(--border); }
+  @media (max-width:680px) { .rot-col + .rot-col { border-left:none; border-top:1px solid var(--border); } }
+  .rot-col h3 { font-size:14px; font-weight:640; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+  .rot-col.keep h3 { color:var(--keep); }
+  .rot-col.cut h3 { color:var(--cut); }
+  .rot-col ul { list-style:none; margin:0; padding:0; }
+  .rot-col li { font-size:13px; color:var(--ink-dim); padding:6px 0 6px 20px; position:relative; line-height:1.45; }
+  .rot-col li::before { position:absolute; left:0; top:6px; font-family:var(--mono); font-size:12px; }
+  .rot-col.keep li::before { content:"+"; color:var(--keep); }
+  .rot-col.cut li::before { content:"\2212"; color:var(--cut); }
+
+  .howto { margin-top:34px; font-size:14px; color:var(--ink-dim); max-width:70ch; }
+  .howto b { color:var(--ink); font-weight:620; }
+  footer { margin-top:40px; padding-top:20px; border-top:1px solid var(--border); font-size:13px; color:var(--ink-faint); line-height:1.6; }
+  footer a { color:var(--accent); text-decoration:none; }
+  footer a:hover { text-decoration:underline; }
+
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Explorable · docs-grounded</p>
+      <h1>Writing the files <em>Claude will follow</em></h1>
+      <p class="lede">The last chapter showed you <b>which</b> files exist. This one is the craft of writing them. Every line in <span class="mono">CLAUDE.md</span> is read at the start of <b>every</b> session and paid for on <b>every</b> turn — and past a point, a bloated file makes Claude <b>ignore the rules that matter</b>, because they are buried in the ones that don't. Here is a real, over-stuffed starter file. Give every line the right home, and watch the file that Claude will actually obey emerge.</p>
+    </div>
+    <button class="theme-btn" id="themeBtn" aria-label="Toggle color theme">◐ theme</button>
+  </header>
+
+  <section class="panel meters" aria-label="live scorecard">
+    <div class="meter" id="mCost" style="--mc:var(--cut)">
+      <div class="ml">context cost · always-on</div>
+      <div class="mv" id="costV">—</div>
+      <div class="bar"><span id="costBar" style="width:0%"></span></div>
+      <div class="mnote">Every kept line is paid for on every turn, forever.</div>
+    </div>
+    <div class="meter" id="mAdh" style="--mc:var(--keep)">
+      <div class="ml">adherence · will Claude comply?</div>
+      <div class="mv" id="adhV">—</div>
+      <div class="bar"><span id="adhBar" style="width:0%"></span></div>
+      <div class="mnote">Noise dilutes the rules you care about.</div>
+    </div>
+    <div class="meter">
+      <div class="ml">CLAUDE.md length</div>
+      <div class="mv" id="lenV">—<small> lines</small></div>
+      <div class="mnote">Docs target: under 200. Toy scale here.</div>
+    </div>
+    <div class="meter">
+      <div class="ml">routed correctly</div>
+      <div class="mv" id="scoreV">—</div>
+      <div class="mnote">Each line has one best home.</div>
+    </div>
+  </section>
+
+  <div class="stage">
+    <section class="panel draft">
+      <div class="draft-hd"><span class="fn">./CLAUDE.md</span><span class="hint">click a line → give it a home</span></div>
+      <div id="lines"></div>
+    </section>
+    <section class="panel detail" id="detail" style="--hc:var(--keep)"></section>
+  </div>
+
+  <section class="panel fverdict" id="fverdict">
+    <div>
+      <div class="fv-big" id="fvBig"></div>
+      <div class="fv-sub" id="fvSub"></div>
+    </div>
+    <div class="fv-score"><b id="fvScore"></b>routed correctly</div>
+    <button class="fv-reset" id="resetBtn">↺ reset the draft</button>
+  </section>
+
+  <section class="panel rot">
+    <div class="rot-col keep">
+      <h3>Keep it in CLAUDE.md if…</h3>
+      <ul>
+        <li>It's a bash command or env quirk Claude <b>can't guess</b>.</li>
+        <li>It's a style or workflow rule that <b>differs from the default</b>.</li>
+        <li>It's concrete enough to <b>verify</b> — "2-space indent", not "format nicely".</li>
+        <li>It's needed in <b>every</b> session, everywhere in the repo.</li>
+      </ul>
+    </div>
+    <div class="rot-col cut">
+      <h3>Move it or cut it if…</h3>
+      <ul>
+        <li>Claude can <b>read it off the code</b> — package.json, the tree, git history.</li>
+        <li>It's a <b>multi-step procedure</b> → a skill, loaded on invoke.</li>
+        <li>It only matters for <b>some files</b> → a path-scoped rule.</li>
+        <li>It <b>must happen every time</b> → a hook; advice is only a request.</li>
+        <li>It's <b>personal</b> → CLAUDE.local.md, not the shared file.</li>
+      </ul>
+    </div>
+  </section>
+
+  <p class="howto">
+    <b>How to read this.</b> The draft opens the way most CLAUDE.md files actually grow — everything dumped in one always-on file. Click any line to inspect it, then pick its home. <b>Keep</b> the handful that earn their seat. <b>Cut</b> what Claude already knows or can read off the code. Send procedures to a <b>skill</b>, file-specific rules to a <b>rule</b>, must-happen guarantees to a <b>hook</b>, and personal notes to <b>local</b>. Watch <b>context cost</b> fall and <b>adherence</b> climb as the noise leaves — they are the same move seen twice. One line is deliberately vague; keeping it isn't enough, you have to <b>make it specific</b> first.
+  </p>
+
+  <footer>
+    Grounded in the Claude Code documentation — <a href="https://code.claude.com/docs/en/best-practices">Best practices · Write an effective CLAUDE.md</a> and <a href="https://code.claude.com/docs/en/memory">Memory · Write effective instructions</a>. Every home shown is real, and the ✅/❌ heuristics are the docs' own. <b>The cost and adherence meters are illustrative, not measured</b> — they encode the documented direction (always-on is expensive; bloat lowers adherence), not token counts or a compliance percentage. Claude Code moves quickly; verify against the docs before betting on a detail. Self-contained — no fonts, scripts, or assets from the network. See also explorable <a href="../05-the-files-you-own/">05 · the files you own</a> (which files exist) and <a href="../06-claude-codes-hands/">06 · Claude Code's hands</a> (the tools those files govern).
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------------
+  // LINES — a realistic, over-stuffed starter CLAUDE.md. Every line is a real
+  // kind of instruction people write; `best` is the home the Claude Code docs
+  // point it toward. `len` is how many lines it costs in the file, `weight` an
+  // illustrative 0-5 always-on context cost (NOT tokens — see footer). `vague`
+  // marks the one line that must be rewritten before it is worth keeping.
+  //   home/best: keep | cut | rule | skill | hook | local
+  // ---------------------------------------------------------------------------
+  var LINES = [
+    { id:"clean", text:"Write clean, readable, well-organized code.", best:"cut", len:1, weight:1,
+      loads:"always", why:"A self-evident practice every model already applies — the docs' ❌ list names “write clean code” outright. It changes nothing and dilutes the lines that do.", ref:1 },
+
+    { id:"format", text:"Format code properly and keep it consistent.", best:"keep", len:1, weight:1, vague:true,
+      rewrite:"Use 2-space indentation, not tabs.",
+      loads:"always", why:"The instinct is right, but Claude can't tell whether it complied — “properly” is unverifiable. Rewrite it into something concrete and it becomes a rule worth keeping. Specific beats vague, every time.", ref:2 },
+
+    { id:"esm", text:"Use ES modules (import/export), not CommonJS (require).", best:"keep", len:1, weight:1,
+      loads:"always", why:"A style choice that differs from what Claude would otherwise reach for. Concrete, verifiable, cheap — exactly what CLAUDE.md is for.", ref:1 },
+
+    { id:"single", text:"Prefer running single tests, not the whole suite, for speed.", best:"keep", len:1, weight:1,
+      loads:"always", why:"A non-obvious workflow preference Claude can't infer from the repo. One cheap line that saves real time on every run.", ref:1 },
+
+    { id:"layout", text:"API handlers live in src/api/handlers/.", best:"keep", len:1, weight:1,
+      loads:"always", why:"Project layout Claude cannot guess without crawling the tree. One line that removes a search from every session.", ref:1 },
+
+    { id:"apirule", text:"Endpoints under src/api/** must validate input and return the standard error shape.", best:"rule", len:2, weight:2,
+      loads:"on a matching file", why:"Real and worth enforcing — but only when Claude is touching API files. As a path-scoped rule in .claude/rules/ it loads on a matching read and costs nothing the rest of the time.", ref:2 },
+
+    { id:"deploy", text:"Before deploying: tree clean, migrations in step, changelog updated, version tagged, smoke tests green, announce in #releases.", best:"skill", len:4, weight:4,
+      loads:"only at deploy time", why:"A multi-step procedure that only matters at deploy time. In CLAUDE.md it is paid for every turn forever; as a skill it loads only when invoked. That is the whole reason skills exist.", ref:1 },
+
+    { id:"pretest", text:"Run npm test before every commit.", best:"hook", len:1, weight:1,
+      loads:"before every commit", why:"“Before every commit” is the tell. As advice, Claude may drop it under a full context. A PreToolUse or Stop hook makes it deterministic — it fires whether Claude remembers or not.", ref:1 },
+
+    { id:"nopush", text:"Never push directly to main.", best:"hook", len:1, weight:1,
+      loads:"on every push", why:"If it must actually hold, advice won't do it — Claude can be reasoned past a sentence in the prompt. A hook (or a settings deny) is a gate the model never sees. Advisory is a request; enforced is a guarantee.", ref:1 },
+
+    { id:"stack", text:"Stack: React 18, TypeScript 5, Vite, ESLint, Prettier, Vitest.", best:"cut", len:2, weight:2,
+      loads:"always", why:"Claude reads this straight off package.json the moment it needs it. Restating it just spends context on something already on disk — /doctor trims exactly this.", ref:2 },
+
+    { id:"tree", text:"src/ contains components/, hooks/, utils/, api/, and lib/.", best:"cut", len:2, weight:2,
+      loads:"always", why:"A directory listing Claude derives from the tree at a glance. The docs' ❌ list: “file-by-file descriptions of the codebase.”", ref:1 },
+
+    { id:"auth", text:"How auth works: on login we issue a JWT signed with RS256, refresh tokens rotate every 15 minutes, sessions live in Redis keyed by…", tail:" [+10 more lines]", best:"cut", len:12, weight:5,
+      loads:"always", why:"A tutorial, not an instruction. Long explanations belong in a linked doc — @docs/auth.md — not inline, where they cost tokens every session and bury the actual rules underneath prose.", ref:1 },
+
+    { id:"secrets", text:"Never paste customer data or secrets into a prompt.", best:"keep", len:1, weight:1,
+      loads:"always", why:"Behavioral and compliance guidance the model genuinely needs to hold in mind. It is advisory by nature and belongs in context — managed-CLAUDE.md territory for a whole org.", ref:2 },
+
+    { id:"sandbox", text:"My sandbox runs on :4000 not :3000; I run Postgres natively, so skip the Docker step.", best:"local", len:1, weight:1,
+      loads:"always", why:"True for you, wrong for everyone else. In the shared file it misleads every teammate. It belongs in gitignored CLAUDE.local.md — same context, yours alone.", ref:2 }
+  ];
+
+  // Homes: label, mono path it moves to, color var, and the "loads when" tag.
+  var HOMES = {
+    keep:  { short:"keep",  verb:"Keep in CLAUDE.md",       path:"./CLAUDE.md",                     c:"--keep",  tag:"always-on · in every prompt" },
+    cut:   { short:"cut",   verb:"Cut it",                  path:"— deleted —",             c:"--cut",   tag:"gone · Claude already has it" },
+    rule:  { short:"rule",  verb:"Move to a rule",          path:".claude/rules/….md",           c:"--rule",  tag:"loads on a matching file" },
+    skill: { short:"skill", verb:"Move to a skill",         path:".claude/skills/…/SKILL.md",    c:"--skill", tag:"loads only when invoked" },
+    hook:  { short:"hook",  verb:"Make it a hook",          path:".claude/settings.json → hooks", c:"--hook",  tag:"enforced · fires every time" },
+    local: { short:"local", verb:"Move to CLAUDE.local.md", path:"./CLAUDE.local.md",               c:"--local", tag:"yours alone · gitignored" }
+  };
+  var ROUTE_ORDER = ["keep", "cut", "rule", "skill", "hook", "local"];
+
+  var REFS = {
+    1: { t:"Claude Code docs · Best practices", u:"https://code.claude.com/docs/en/best-practices" },
+    2: { t:"Claude Code docs · Memory", u:"https://code.claude.com/docs/en/memory" }
+  };
+
+  // Cost bar tops out at "everything kept" — the naive starting file.
+  var MAX_WEIGHT = 0, i;
+  for (i = 0; i < LINES.length; i++) MAX_WEIGHT += LINES[i].weight;
+
+  // ---- STATE ----
+  var home = {};                 // id -> current home
+  var rewritten = {};            // id -> vague line has been made specific?
+  var sel = LINES[0].id;
+  var lastFocus = null;
+  var $ = function (id) { return document.getElementById(id); };
+  function byId(id) { for (var j = 0; j < LINES.length; j++) if (LINES[j].id === id) return LINES[j]; return null; }
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+  function reset() {
+    for (var j = 0; j < LINES.length; j++) { home[LINES[j].id] = "keep"; rewritten[LINES[j].id] = false; }
+  }
+  reset();
+
+  // A line is "correct" when it sits in its best home. The vague line is only
+  // correct if it was ALSO made specific first — keeping mush is not the fix.
+  function correct(p) {
+    if (home[p.id] !== p.best) return false;
+    if (p.vague && !rewritten[p.id]) return false;
+    return true;
+  }
+
+  // ---- METRICS ----
+  function metrics() {
+    var keptWeight = 0, keptLines = 0, right = 0, penalty = 0, keptCount = 0, j, p;
+    for (j = 0; j < LINES.length; j++) {
+      p = LINES[j];
+      if (correct(p)) right++;
+      if (home[p.id] === "keep") {
+        keptWeight += p.weight; keptLines += p.len; keptCount++;
+        if (p.best !== "keep") penalty += p.weight * 3;      // kept noise dilutes hardest, by volume
+        else if (p.vague && !rewritten[p.id]) penalty += 6;  // kept but still vague
+      }
+    }
+    if (keptCount > 8) penalty += (keptCount - 8);            // sheer volume, a little
+    var adh = Math.max(0, Math.min(100, 100 - penalty));
+    return { keptWeight:keptWeight, keptLines:keptLines, right:right, adh:adh };
+  }
+
+  // ---- RENDER: meters ----
+  function renderMeters(m) {
+    var costPct = Math.round((m.keptWeight / MAX_WEIGHT) * 100);
+    $("costV").innerHTML = costPct + '<small> / 100</small>';
+    $("costBar").style.width = costPct + "%";
+    $("adhV").innerHTML = m.adh + '<small> / 100</small>';
+    $("adhBar").style.width = m.adh + "%";
+    $("lenV").innerHTML = m.keptLines + '<small> lines</small>';
+    $("scoreV").textContent = m.right + " / " + LINES.length;
+    $("fvScore").textContent = m.right + "/" + LINES.length;
+
+    // length meter goes amber-to-red as the file bloats past a lean target (~6 toy lines)
+    var lc = m.keptLines <= 8 ? "--keep" : (m.keptLines <= 16 ? "--hook" : "--cut");
+    $("lenV").style.color = "var(" + lc + ")";
+  }
+
+  // ---- RENDER: file verdict banner ----
+  function renderVerdict(m) {
+    var el = $("fverdict"), big, sub, c;
+    if (m.right === LINES.length) {
+      c = "--keep";
+      big = "This is a file Claude will <b>follow</b>.";
+      sub = "Every line either earns its always-on seat or found a cheaper home. Lean, specific, and nothing buried.";
+    } else if (m.adh >= 70) {
+      c = "--hook";
+      big = "Getting there.";
+      sub = "Adherence is recovering as the noise leaves — a few lines are still in the wrong home. Inspect the ones without a ✓.";
+    } else {
+      c = "--cut";
+      big = "Your real rules are <b>drowning</b>.";
+      sub = "Everything is dumped in one always-on file. The rules that matter are competing with derivable facts, procedures, and prose. Start giving lines a cheaper home.";
+    }
+    el.style.setProperty("--fvc", "var(" + c + ")");
+    $("fvBig").innerHTML = big;
+    $("fvSub").textContent = sub;
+  }
+
+  // ---- RENDER: the draft ----
+  function renderLines() {
+    var h = "", j, p, hm;
+    for (j = 0; j < LINES.length; j++) {
+      p = LINES[j]; hm = home[p.id];
+      var isGood = correct(p);
+      var showMark = hm !== "keep" || isGood || (p.vague);
+      var mark = "";
+      if (hm === "keep" && isGood) mark = '<span class="mark ok">✓</span>';
+      else if (hm !== "keep") mark = isGood ? '<span class="mark ok">✓</span>' : '<span class="mark no">✗</span>';
+      else if (p.vague && !rewritten[p.id]) mark = '<span class="mark no">~</span>';
+      else if (hm === "keep" && !isGood) mark = '<span class="mark no">✗</span>';
+
+      var txt = (p.vague && rewritten[p.id]) ? p.rewrite : p.text;
+      var tail = (p.tail && !(p.vague && rewritten[p.id])) ? '<span class="dim" style="color:var(--ink-faint)">' + esc(p.tail) + '</span>' : "";
+
+      h += '<button class="line" style="--hc:var(' + HOMES[hm].c + ')"' +
+           ' data-id="' + p.id + '" data-home="' + hm + '" data-good="' + (isGood ? 1 : 0) + '" data-sel="' + (sel === p.id ? 1 : 0) + '"' +
+           ' aria-label="' + esc(txt) + " — home: " + HOMES[hm].short + (isGood ? ", correct" : "") + '. Press to inspect.">' +
+           mark +
+           '<span class="lt">' + esc(txt) + tail + '</span>' +
+           '<span class="home-chip">' + HOMES[hm].short + '</span></button>';
+    }
+    $("lines").innerHTML = h;
+    var btns = $("lines").querySelectorAll("button[data-id]");
+    for (j = 0; j < btns.length; j++) {
+      btns[j].addEventListener("click", function () { sel = this.getAttribute("data-id"); lastFocus = sel; render(); });
+    }
+  }
+
+  // ---- RENDER: detail ----
+  function renderDetail() {
+    var p = byId(sel), hm = home[p.id], el = $("detail");
+    el.style.setProperty("--hc", "var(" + HOMES[hm].c + ")");
+    var isGood = correct(p);
+
+    var quoteTxt = (p.vague && rewritten[p.id]) ? p.rewrite : p.text;
+    var quoteTail = (p.tail && !(p.vague && rewritten[p.id])) ? '<span class="dim">' + esc(p.tail) + '</span>' : "";
+
+    var h = '<div class="d-top">' +
+      '<span class="d-tag">the line under inspection</span>' +
+      '<span class="d-live">now: ' + HOMES[hm].short + (isGood ? " · ✓" : "") + '</span></div>' +
+      '<p class="d-quote">' + esc(quoteTxt) + quoteTail + '</p>';
+
+    h += '<div class="facts">' +
+      '<div class="fact"><div class="fl">best home</div><div class="fv">' + HOMES[p.best].short + '</div></div>' +
+      '<div class="fact"><div class="fl">loads</div><div class="fv">' + p.loads + '</div></div>' +
+      '<div class="fact"><div class="fl">costs in CLAUDE.md</div><div class="fv">' + p.len + ' line' + (p.len === 1 ? '' : 's') + '</div></div>' +
+      '</div>';
+
+    // route picker
+    h += '<div class="subhead">give it a home</div><div class="routes">';
+    for (var r = 0; r < ROUTE_ORDER.length; r++) {
+      var k = ROUTE_ORDER[r];
+      h += '<button class="route" style="--rc:var(' + HOMES[k].c + ')" data-route="' + k + '"' +
+           ' data-best="' + (k === p.best ? 1 : 0) + '" aria-pressed="' + (hm === k ? "true" : "false") + '">' +
+           '<span class="rd"></span>' + HOMES[k].short + '</button>';
+    }
+    h += '</div>';
+    h += '<div class="goes"><b>' + HOMES[hm].short + '</b> → <span class="mono">' + esc(HOMES[hm].path) + '</span> · ' + HOMES[hm].tag + '</div>';
+
+    // the vague line's rewrite station, shown when it is being kept
+    if (p.vague) {
+      h += '<div class="rewrite">' +
+        '<div class="rw-row"><span class="rw-tag b">vague</span><span class="rw-txt">' + esc(p.text) + '</span></div>' +
+        '<div class="rw-row"><span class="rw-tag a">specific</span><span class="rw-txt ' + (rewritten[p.id] ? "done" : "") + '">' + (rewritten[p.id] ? esc(p.rewrite) : "— not yet written —") + '</span></div>' +
+        '<button class="rw-btn" id="rwBtn"' + (rewritten[p.id] ? " disabled" : "") + '>' + (rewritten[p.id] ? "✓ made specific" : "make it specific") + '</button>' +
+        '</div>';
+    }
+
+    // per-line verdict: correct vs. why the current home is wrong
+    var vh;
+    if (isGood) {
+      vh = "<b>Right home.</b> " + p.why;
+    } else if (hm === "keep" && p.vague && !rewritten[p.id]) {
+      vh = "<b>Keeping mush.</b> " + p.why;
+    } else if (hm === "keep") {
+      vh = "<b>Paid for every turn.</b> " + p.why + " Its best home is <b>" + HOMES[p.best].short + "</b>.";
+    } else if (home[p.id] === p.best) {
+      vh = "<b>Right home.</b> " + p.why;
+    } else {
+      vh = "<b>Wrong home.</b> This isn't where it belongs — its best home is <b>" + HOMES[p.best].short + "</b>. " + p.why;
+    }
+    h += '<div class="verdict-in">' + vh + '</div>';
+
+    var rf = REFS[p.ref];
+    h += '<div class="d-ref"><b>Source</b> · <a href="' + rf.u + '" target="_blank" rel="noopener">' + rf.t + '</a></div>';
+
+    el.innerHTML = h;
+
+    var rb = $("lines"); // route wiring
+    var routes = el.querySelectorAll("button[data-route]");
+    for (var q = 0; q < routes.length; q++) {
+      routes[q].addEventListener("click", function () {
+        home[sel] = this.getAttribute("data-route");
+        lastFocus = sel;
+        render();
+      });
+    }
+    var rw = $("rwBtn");
+    if (rw) rw.addEventListener("click", function () { rewritten[sel] = true; render(); });
+  }
+
+  function render() {
+    var m = metrics();
+    renderMeters(m);
+    renderLines();
+    renderDetail();
+    renderVerdict(m);
+    // innerHTML replaced the focused node — restore focus so the keyboard path
+    // survives every click (otherwise focus drops to <body>).
+    if (lastFocus && document.activeElement === document.body) {
+      var n = document.querySelector('.line[data-id="' + lastFocus + '"]');
+      if (n && n.focus) n.focus();
+    }
+  }
+
+  $("resetBtn").addEventListener("click", function () { reset(); sel = LINES[0].id; lastFocus = null; render(); });
+
+  // ---- theme (choice persisted locally; nothing leaves the page) ----
+  var themeBtn = $("themeBtn");
+  function currentDark() {
+    var root = document.documentElement;
+    return root.getAttribute("data-theme") === "dark" ||
+      (!root.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  }
+  function paintThemeBtn() {
+    themeBtn.textContent = currentDark() ? "☀ light" : "☾ dark";
+    themeBtn.setAttribute("aria-pressed", currentDark() ? "true" : "false");
+  }
+  try {
+    var saved = localStorage.getItem("write-theme");
+    if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+  } catch (e) {}
+  paintThemeBtn();
+  themeBtn.addEventListener("click", function () {
+    var next = currentDark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("write-theme", next); } catch (e) {}
+    paintThemeBtn();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

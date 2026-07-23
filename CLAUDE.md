@@ -22,8 +22,9 @@ python -m http.server 8000   # then visit http://localhost:8000/
 Current chapters:
 - `04-under-the-hood-of-claude-code` — the real query loop: context assembly, the five-layer compaction pipeline, the deny-first permission gate, subagent isolation.
 - `05-the-files-you-own` — everything under `.claude/` as a markdown file with frontmatter; which parts are advice the model can ignore and which are gates it never sees.
+- `07-writing-the-files` — the craft of authoring those files well: a pruning bench that routes each line of an over-stuffed starter `CLAUDE.md` to its right home (keep/cut/rule/skill/hook/local) as context cost and adherence trade off.
 
-Chapters keep their original two-digit numbers (04, 05) from the parent `gen-ai-explorables` collection, but are presented to the reader as chapter 1, 2, … via the `num` field (see below).
+Chapters keep their original two-digit numbers (04, 05, …) from the parent `gen-ai-explorables` collection, but are presented to the reader as chapter 1, 2, … via the `num` field (see below).
 
 ## Adding a chapter
 

@@ -5,6 +5,7 @@ An interactive field guide to **how Claude Code works** — and the files you ow
 **Chapters**
 1. **Under the hood of Claude Code** — trace one turn of the real query loop: context assembly, the five-layer compaction pipeline, the deny-first permission gate, subagent isolation.
 2. **The files you own in Claude Code** — everything under `.claude/` is a markdown file with frontmatter. Walk a real project tree and learn which parts are advice the model can ignore and which are gates it never sees.
+3. **Writing the files you own** — knowing which files exist is half of it; the craft is writing them so Claude actually follows them. Take a real, over-stuffed starter `CLAUDE.md` and route every line to its right home (keep, cut, rule, skill, hook, local) while context cost and adherence move in opposite directions.
 
 ## Run locally
 
@@ -27,8 +28,8 @@ Serving (rather than `file://`) is recommended so the book can theme the embedde
 
 ## How it's built
 
-One self-contained `index.html` (sidebar table of contents, cover, and a reader that embeds each chapter as a live `<iframe>`), plus the two explorables in their own folders. Everything is inline HTML/CSS/vanilla JS — no framework, no network calls. To add a chapter, drop its folder in and append one entry to the `CHAPTERS` array in `index.html`.
+One self-contained `index.html` (sidebar table of contents, cover, and a reader that embeds each chapter as a live `<iframe>`), plus the explorables in their own numbered folders. Everything is inline HTML/CSS/vanilla JS — no framework, no network calls. To add a chapter, drop its folder in and append one entry to the `CHAPTERS` array in `index.html`.
 
-Chapter 1 is grounded in *"Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems"* and the official *How Claude Code works* documentation; the model's internals are left deliberately opaque.
+Chapters are grounded in *"Dive into Claude Code: The Design Space of Today's and Future AI Agent Systems"* (arXiv 2604.14228) and the official Claude Code documentation; the model's internals are left deliberately opaque.
 
 By [Bhaskarjit Sarmah](https://bhaskarjitsarmah.github.io). Part of the [Gen AI Explorables](https://bhaskarjitsarmah.github.io/gen-ai-explorables/) collection.
