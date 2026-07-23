@@ -23,6 +23,7 @@ Current chapters:
 - `04-under-the-hood-of-claude-code` — the real query loop: context assembly, the five-layer compaction pipeline, the deny-first permission gate, subagent isolation.
 - `05-the-files-you-own` — everything under `.claude/` as a markdown file with frontmatter; which parts are advice the model can ignore and which are gates it never sees.
 - `07-writing-the-files` — the craft of authoring those files well: a pruning bench that routes each line of an over-stuffed starter `CLAUDE.md` to its right home (keep/cut/rule/skill/hook/local) as context cost and adherence trade off.
+- `08-monorepo` — configuring Claude Code across a shared monorepo (one repo, many teams): a two-dial console (where you start Claude × who you are) showing what each teammate's session loads (per-package CLAUDE.md, skills) and how the four settings scopes (managed/project/local/user) merge into one deny-first gate.
 
 Chapters keep their original two-digit numbers (04, 05, …) from the parent `gen-ai-explorables` collection, but are presented to the reader as chapter 1, 2, … via the `num` field (see below).
 

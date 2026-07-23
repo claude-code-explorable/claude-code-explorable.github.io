@@ -6,6 +6,7 @@ An interactive field guide to **how Claude Code works** — and the files you ow
 1. **Under the hood of Claude Code** — trace one turn of the real query loop: context assembly, the five-layer compaction pipeline, the deny-first permission gate, subagent isolation.
 2. **The files you own in Claude Code** — everything under `.claude/` is a markdown file with frontmatter. Walk a real project tree and learn which parts are advice the model can ignore and which are gates it never sees.
 3. **Writing the files you own** — knowing which files exist is half of it; the craft is writing them so Claude actually follows them. Take a real, over-stuffed starter `CLAUDE.md` and route every line to its right home (keep, cut, rule, skill, hook, local) while context cost and adherence move in opposite directions.
+4. **Claude Code in a monorepo** — scaling that craft to one repo shared by many teams. Turn two dials — where you start Claude and who you are — and watch a monorepo session assemble: which per-package `CLAUDE.md` files load, and how org (managed), team (project), and personal (local) settings merge into one gate where deny wins and the org's rules can't be overridden.
 
 ## Run locally
 
